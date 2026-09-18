@@ -73,3 +73,46 @@ def test_pdf_with_repairable_xref_keeps_text(tmp_path):
     writer.write(path)
     path.write_bytes(re.sub(rb"startxref\s+\d+", b"startxref\n0", path.read_bytes()))
     assert "Readable document" in extract(path, "application/pdf")["text"]
+
+
+def test_korean_notice_ocr_preserves_every_line():
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    if not shutil.which("tesseract"):
+        pytest.skip("Tesseract is required for the real OCR regression")
+    languages = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, check=True).stdout.splitlines()
+    if "kor" not in languages:
+        pytest.skip("Korean Tesseract data is required")
+    result = extract(Path(__file__).parent / "fixtures/korean-notice.png", "image/png")
+    compact = "".join(result["text"].split())
+    for line in ["해커톤 안내문", "행사명: 모두라우터 데모", "장소: 파란 강의실", "시작 시간: 오후 2시"]:
+        assert "".join(line.split()) in compact
+
+
+@pytest.mark.parametrize("confidence,block_text,expected", [
+    (95, "longer block text", "left column\nright column"),
+    (20, "unreliable", "OCR_LOW_CONFIDENCE"),
+])
+def test_ocr_keeps_automatic_layout_unless_block_recovers_more(tmp_path, monkeypatch, confidence, block_text, expected):
+    from types import SimpleNamespace
+
+    from modurouter.extract import image_text
+
+    def run(command, **kwargs):
+        from pathlib import Path
+
+        output = Path(command[2])
+        text = "left column\nright column" if command[command.index("--psm") + 1] == "3" else block_text
+        output.with_suffix(".txt").write_text(text)
+        output.with_suffix(".tsv").write_text("level\tconf\ttext\n" + f"5\t{confidence}\t{text.replace(chr(10), ' ')}\n")
+        assert 0 < kwargs["timeout"] <= 20
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("modurouter.extract.subprocess.run", run)
+    if expected == "OCR_LOW_CONFIDENCE":
+        with pytest.raises(ValueError, match=expected):
+            image_text(tmp_path / "image.png")
+    else:
+        assert image_text(tmp_path / "image.png") == expected

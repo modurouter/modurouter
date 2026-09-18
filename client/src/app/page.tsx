@@ -6,7 +6,7 @@ import {Dialog} from '@base-ui/react/dialog';
 import {ArrowUp, ArrowUpRight, BookOpen, Check, FileText, Globe, Menu, Mic, Paperclip, Plus, Settings, Square, Trash2, Volume2, X} from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import {api, apiUrl, ApiError, consumeEvents, ensureSession, responseError, runErrorMessage, type Attachment, type Conversation, type Message, type Run, type Source, type Usage, type User} from '@/lib/api';
+import {api, apiUrl, ApiError, attachmentErrorMessage, fetchApi, readSavedAttachments, restoreAttachments, consumeEvents, ensureSession, responseError, runErrorMessage, type Attachment, type Conversation, type Message, type Run, type Source, type Usage, type User} from '@/lib/api';
 
 type SpeechResultEvent = {results: {length:number; [index:number]:{[index:number]:{transcript:string}}}};
 type Recognition = {lang:string; interimResults:boolean; continuous:boolean; onresult:((e:SpeechResultEvent)=>void)|null; onerror:((e:{error:string})=>void)|null; onend:(()=>void)|null; start:()=>void; stop:()=>void; abort:()=>void};
@@ -126,7 +126,7 @@ export default function Home() {
           if(configuration.status==='fulfilled')setConfig(configuration.value);else handleError(configuration.reason);
           const active:User|null=session.status==='fulfilled'?session.value:null;
           if(session.status==='rejected'&&!(session.reason instanceof ApiError&&session.reason.status===401))handleError(session.reason);
-          if(active){setUser(active);await refresh();const saved=storage.get(`modurouter-conversation:${active.id}`);if(saved)await openConversation(saved)}
+          if(active){setUser(active);await refresh();const saved=storage.get(`modurouter-conversation:${active.id}`);if(saved)await openConversation(saved,active.id)}
         }catch(e){handleError(e)}finally{setLoading(false)}
       })();
     }
@@ -136,6 +136,9 @@ export default function Home() {
   },[refresh,handleError]);
 
   useEffect(()=>{if(!loading)storage.set('modurouter-draft',draft)},[draft,loading]);
+  useEffect(()=>{
+    if(!loading&&!opening&&user&&current)storage.set(`modurouter-attachments:${user.id}:${current}`,JSON.stringify(attachments.map(({id,filename})=>({id,filename}))));
+  },[attachments,current,user,loading,opening]);
   useEffect(()=>{const element=scroller.current;if(element && element.scrollHeight-element.scrollTop-element.clientHeight<220)element.scrollTo({top:element.scrollHeight})},[messages,status]);
 
   const pendingFiles=attachments.filter(a=>a.status==='queued'||a.status==='pending').map(a=>a.id).join(',');
@@ -156,17 +159,19 @@ export default function Home() {
     setCurrent(c.id);storage.set(`modurouter-conversation:${user!.id}`,c.id);setConversations(cs=>[c,...cs]);return c.id;
   }
 
-  async function openConversation(id:string) {
+  async function openConversation(id:string, ownerId=user?.id) {
     if(operation.current)return;
     const version=++navigation.current;
     setOpening(true);stopSpeech();
-    setError('');setAttachments([]);setStatus('');setDrawer(false);retry.current=null;
+    setError('');setStatus('');setDrawer(false);retry.current=null;
     try {
       const c=await api<Conversation&{messages:Message[]}>(`/v1/conversations/${id}`);
       const ids=Array.from(new Set(c.messages.filter(m=>m.role==='assistant').map(m=>m.run_id)));
       const details=await Promise.all(ids.map(id=>api<Run>(`/v1/runs/${id}`)));
+      const savedAttachments=ownerId?readSavedAttachments(storage.get(`modurouter-attachments:${ownerId}:${id}`)):[];
+      const restored=await restoreAttachments(savedAttachments);
       if(version!==navigation.current)return;
-      setCurrent(id);if(user)storage.set(`modurouter-conversation:${user.id}`,id);setMessages(c.messages);
+      setCurrent(id);setAttachments(restored);if(ownerId)storage.set(`modurouter-conversation:${ownerId}`,id);setMessages(c.messages);
       setRuns(Object.fromEntries(details.map(r=>[r.run_id,r])));
       setOpening(false);
       const running=details.find(isActive);
@@ -226,7 +231,7 @@ export default function Home() {
       const body=JSON.stringify({message:question,search_enabled:search,attachment_ids:attachments.map(a=>a.id),explanation_mode:simple?'simple':'standard'});
       const key=retry.current?.body===body&&retry.current.conversationId===conversationId?retry.current.key:crypto.randomUUID();
       retry.current={key,body,conversationId};
-      const response=await fetch(apiUrl(`/v1/conversations/${conversationId}/runs`),{method:'POST',credentials:'include',signal:abort.signal,headers:{'Content-Type':'application/json','X-CSRF-Token':user.csrf_token,'Idempotency-Key':key},body});
+      const response=await fetchApi(`/v1/conversations/${conversationId}/runs`,{method:'POST',credentials:'include',signal:abort.signal,headers:{'Content-Type':'application/json','X-CSRF-Token':user.csrf_token,'Idempotency-Key':key},body});
       if(!response.ok)throw await responseError(response);
       setDraft('');
       if(response.headers.get('Content-Type')?.includes('application/json')){
@@ -279,7 +284,7 @@ export default function Home() {
     }catch(e){handleError(e)}finally{operation.current=false;setUploading(false)}
   }
 
-  async function removeAttachment(a:Attachment){try{await api(`/v1/attachments/${a.id}`,{method:'DELETE'},user?.csrf_token);setAttachments(as=>as.filter(x=>x.id!==a.id))}catch(e){handleError(e)}}
+  async function removeAttachment(a:Attachment){try{if(a.status!=='expired')await api(`/v1/attachments/${a.id}`,{method:'DELETE'},user?.csrf_token);setAttachments(as=>as.filter(x=>x.id!==a.id))}catch(e){handleError(e)}}
 
   function startVoice() {
     const Constructor=(window as SpeechWindow).SpeechRecognition||(window as SpeechWindow).webkitSpeechRecognition;
@@ -308,7 +313,7 @@ export default function Home() {
     window.speechSynthesis.speak(utterance);
   }
 
-  async function logout(){try{const response=await fetch(apiUrl('/auth/logout'),{method:'POST',headers:{'X-CSRF-Token':user!.csrf_token},credentials:'include'});if(!response.ok)throw new Error('로그아웃하지 못했습니다. 다시 시도해 주세요.');storage.remove('modurouter-draft');location.reload()}catch(e){handleError(e)}}
+  async function logout(){try{const response=await fetchApi('/auth/logout',{method:'POST',headers:{'X-CSRF-Token':user!.csrf_token},credentials:'include'});if(!response.ok)throw new Error('로그아웃하지 못했습니다. 다시 시도해 주세요.');storage.remove('modurouter-draft');location.reload()}catch(e){handleError(e)}}
 
   async function deleteAccount(){try{await api('/v1/me',{method:'DELETE'},user?.csrf_token);storage.remove('modurouter-draft');location.reload()}catch(e){handleError(e);throw e}}
 
@@ -334,7 +339,7 @@ export default function Home() {
         <p className="status-line" role="status" aria-live="polite">{listening?'듣고 있습니다. 인식한 문장은 전송 전에 수정할 수 있습니다.':uploading?'파일을 올리고 있습니다.':status}</p>
         <p className="model-routing-note">모델 자동 선택 <span>질문에 맞춰 선택하며, 사용한 모델은 각 답변에 표시됩니다.</span></p>
         <form className="composer" onSubmit={e=>{e.preventDefault();send()}}>
-          {attachments.length>0&&<div className="attachments">{attachments.map(a=><div className="attachment" key={a.id}><FileText/><span className="name">{a.filename}</span><span>{a.status==='ready'?'읽기 완료':a.status==='failed'?'읽기 실패':a.status==='expired'?'만료됨':'읽는 중'}</span>{a.status==='ready'&&<button type="button" className="quiet" onClick={()=>setPreview(a)}>내용 확인</button>}<button type="button" className="quiet" disabled={busy||uploading} aria-label={`${a.filename} 첨부 삭제`} onClick={()=>removeAttachment(a)}><X/></button></div>)}</div>}
+          {attachments.length>0&&<div className="attachments">{attachments.map(a=><div className="attachment-item" key={a.id}><div className="attachment"><FileText/><span className="name">{a.filename}</span><span>{a.status==='ready'?'읽기 완료':a.status==='failed'?'읽기 실패':a.status==='expired'?'만료됨':a.status==='unavailable'?'확인 필요':'읽는 중'}</span>{a.status==='ready'&&<button type="button" className="quiet" onClick={()=>setPreview(a)}>내용 확인</button>}<button type="button" className="quiet" disabled={busy||uploading||opening} aria-label={`${a.filename} 첨부 삭제`} onClick={()=>removeAttachment(a)}><X/></button></div>{attachmentErrorMessage(a)&&<p className="small error" role="alert">{attachmentErrorMessage(a)}</p>}{a.status==='ready'&&/\.(png|jpe?g)$/i.test(a.filename)&&<p className="small muted">이미지에서 읽은 내용은 누락되거나 틀릴 수 있습니다. 내용 확인에서 원본과 비교해 주세요.</p>}</div>)}</div>}
           <label htmlFor="question" className="sr-only">질문 입력</label><textarea aria-describedby={error?'composer-error':undefined} id="question" ref={input} value={draft} onChange={e=>setDraft(e.target.value)} placeholder={loading?'서비스에 연결하고 있습니다.':'질문을 입력하거나 자료를 첨부하세요.'} disabled={!user||busy||opening} maxLength={12000} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&window.matchMedia('(hover: hover) and (pointer: fine)').matches){e.preventDefault();send()}}}/>
           <div className="composer-controls"><div className="tools"><input ref={uploadInput} type="file" hidden tabIndex={-1} accept=".txt,.pdf,.png,.jpg,.jpeg" multiple aria-hidden="true" onChange={e=>uploadFiles(e.target.files)}/><button type="button" aria-label="파일 첨부" disabled={!user||busy||uploading||opening} onClick={()=>uploadInput.current?.click()}><Paperclip/><span className="tool-text">첨부</span></button><button type="button" aria-pressed={search} disabled={!user||busy||opening} onClick={()=>setSearch(s=>!s)}><Globe/>웹 검색</button><button type="button" aria-pressed={simple} disabled={!user||busy||opening} onClick={()=>setSimple(s=>!s)}><BookOpen/><span className="tool-text" aria-hidden="true">쉬운 설명</span><span className="sr-only">쉬운 설명</span></button><button type="button" aria-label={listening?'음성 입력 중단':'음성 입력'} aria-pressed={listening} disabled={!user||busy||opening} onClick={voice}><Mic/></button></div>{busy?<button type="button" onClick={cancel} aria-label="답변 생성 중단"><Square/>중단</button>:<button className="primary" type="submit" disabled={!user||busy||opening||!draft.trim()||uploading||attachments.some(a=>a.status!=='ready')} aria-label="질문 전송"><ArrowUp/></button>}</div>
         </form><p className="composer-note">AI의 답변은 틀릴 수 있습니다. 중요한 내용은 출처를 확인해 주세요.</p>

@@ -129,3 +129,11 @@ Rejected HTTP calls and failures before a connection is established settle at ze
 After investigating a reservation overrun and verifying the current model prices, an operator can run `uv run python -m modurouter.billing_review USER_ID --reviewed`. Recovery refuses active runs or unsettled attempts and preserves all daily limits and recorded spending. This command does not run automatically.
 
 Vercel deployment reads the token from root `.env` and passes it through the child process environment, not command-line arguments. Browser CSP restricts resource origins and disables objects and framing; inline scripts remain allowed for the current Next.js rendering setup.
+
+## Attachment recovery
+
+The composer saves pending attachment IDs and filenames per account and conversation in session storage. Reloading refreshes each attachment from the API. Unavailable or expired files remain visible with recovery instructions and block submission until resolved or removed. Extracted file content is not copied into browser storage. Network failures preserve the question and explain how to retry.
+
+Follow-up questions reuse the latest successful attachment set in the same conversation. Supplying new attachments replaces that set for subsequent questions. Only submitted sources are eligible; unsubmitted uploads and other conversations are excluded. Expired, deleted or missing sources stop the answer before a model call and request reattachment. Context limits still apply and retain the existing truncation notice.
+
+Image OCR compares automatic layout with a single text block using Tesseract confidence and recovered text. Automatic ordering is retained unless the block pass recovers substantially more confident text. Low-confidence extraction is rejected with guidance to upload a clearer image or TXT. These scores cannot guarantee completeness, so the composer also asks users to compare the preview with the original. The Korean notice regression fixture reproduces issue #4 at 1100 by 420 pixels with Noto Sans CJK Korean Regular, 38px. Run the extraction tests with Korean and English Tesseract data installed to exercise it.

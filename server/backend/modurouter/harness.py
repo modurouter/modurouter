@@ -150,6 +150,7 @@ class Execution:
         self.request_id = request_id
         self.adapters = create_adapters(settings)
         self.sources = []
+        self.attachment_ids = list(body.attachment_ids)
         self.seq = 0
         self.response = ""
         self.tool_count = 0
@@ -223,8 +224,8 @@ class Execution:
                 result = [await read_url(arguments["url"])]
             elif name == "read_attachment":
                 identifier = arguments["attachment_id"]
-                if identifier not in self.body.attachment_ids:
-                    raise AppError("TOOL_NOT_ALLOWED", "이번 질문에 첨부한 파일만 읽을 수 있습니다.")
+                if identifier not in self.attachment_ids:
+                    raise AppError("TOOL_NOT_ALLOWED", "이 대화에서 사용한 첨부파일만 읽을 수 있습니다.")
                 result = [await self.attachment_source(identifier)]
             else:
                 raise AppError("TOOL_PLAN_INVALID", "지원하지 않는 자료 요청입니다.")
@@ -235,8 +236,18 @@ class Execution:
 
     async def attachment_source(self, identifier):
         async with Session() as db:
-            row = await owned_attachment(db, self.user_id, identifier)
-            if row.extraction_status != "ready" or row.expires_at <= utcnow():
+            try:
+                row = await owned_attachment(db, self.user_id, identifier)
+            except AppError as exc:
+                if exc.code == "NOT_FOUND":
+                    raise AppError("ATTACHMENT_EXPIRED", "이전 첨부파일을 찾을 수 없습니다. 파일을 다시 첨부해 주세요.") from exc
+                raise
+            run = await db.get(Run, self.run_id)
+            if row.conversation_id != run.conversation_id:
+                raise AppError("NOT_FOUND", "첨부파일을 찾을 수 없습니다.", 404)
+            if row.extraction_status == "expired" or row.expires_at <= utcnow():
+                raise AppError("ATTACHMENT_EXPIRED", "이전 첨부파일이 만료되거나 삭제되었습니다. 파일을 다시 첨부해 주세요.")
+            if row.extraction_status != "ready" or not row.extracted_text:
                 raise AppError("ATTACHMENT_NOT_READY", "첨부파일을 아직 읽을 수 없습니다.")
             return {"title": row.filename, "attachment_id": row.id, "text": row.extracted_text,
                     "scope": "attachment", "truncated": row.truncated}
@@ -387,13 +398,34 @@ class Execution:
                     raise
         raise AppError("PROVIDER_UNAVAILABLE", "사용 가능한 모델이 없습니다.", 503, True)
 
+    async def restore_attachment_context(self):
+        if self.attachment_ids:
+            return
+        async with Session() as db:
+            run = await db.get(Run, self.run_id)
+            # Reuse the latest successful attachment set, never unsubmitted uploads.
+            previous_run = await db.scalar(select(Run.id).join(ToolRun).where(
+                Run.conversation_id == run.conversation_id, Run.user_id == self.user_id,
+                Run.id != self.run_id, Run.status == "completed",
+                ToolRun.tool_name == "read_attachment", ToolRun.status == "completed"
+            ).order_by(Run.started_at.desc(), Run.id.desc()).limit(1))
+            if previous_run:
+                tools = (await db.scalars(select(ToolRun).where(
+                    ToolRun.run_id == previous_run, ToolRun.tool_name == "read_attachment",
+                    ToolRun.status == "completed").order_by(ToolRun.id))).all()
+                sources = sorted((source for tool in tools for source in tool.sources
+                                  if source.get("attachment_id")),
+                                 key=lambda source: int(source["source_id"][1:]))
+                self.attachment_ids = list(dict.fromkeys(source["attachment_id"] for source in sources))
+
     async def execute(self):
         started = time.monotonic()
         await self.emit("meta", status="accepted")
         try:
             async with asyncio.timeout(settings.run_timeout_seconds):
                 await self.status("preparing")
-                for identifier in self.body.attachment_ids:
+                await self.restore_attachment_context()
+                for identifier in self.attachment_ids:
                     await self.add_sources("read_attachment", [await self.attachment_source(identifier)])
                 if self.body.search_enabled:
                     await self.tool("search_web", {"query": self.body.message[:500]})

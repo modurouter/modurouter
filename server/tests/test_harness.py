@@ -79,7 +79,7 @@ class Provider:
         if model == "test/a" and self.error:
             raise ProviderError(self.error, self.error == 429 or self.error >= 500, not_billable=True)
         text = '{"type":"tool","tool":{"name":"search_web","arguments":{"query":"secret"}}}' if self.leak else "안녕하세요. 함께 알아보겠습니다."
-        yield {"id": "gen-success", "model": model, "choices": [{"delta": {"content": text}}]}
+        yield {"id": f"gen-success-{len(self.calls)}", "model": model, "choices": [{"delta": {"content": text}}]}
         yield {"usage": {"cost": 0, "prompt_tokens": 20, "completion_tokens": 10}, "choices": []}
 
     async def close(self):
@@ -547,3 +547,102 @@ async def test_complete_korean_source_reaches_model(world, provider, monkeypatch
     assert source["text"] == text
     async with database() as db:
         assert not (await db.scalar(select(Run))).context_truncated
+
+
+async def ready_attachment(database, cid, text, filename="notice.txt"):
+    from modurouter.models import Attachment
+
+    async with database.begin() as db:
+        owner = (await db.get(Conversation, cid)).user_id
+        row = Attachment(user_id=owner, conversation_id=cid, filename=filename,
+                         storage_key=f"test/{filename}", mime_type="text/plain", size_bytes=100,
+                         extracted_text=text, extraction_status="ready", expires_at=utcnow() + timedelta(hours=1))
+        db.add(row)
+        await db.flush()
+        return row.id
+
+
+async def test_followup_restores_original_attachment_and_sources(world, provider, database, monkeypatch):
+    monkeypatch.setattr(harness.settings, "max_model_calls_per_run", 1)
+    client, cid = world
+    text = "행사명: 모두라우터 데모\n장소: 파란 강의실\n시작 시간: 오후 2시"
+    aid = await ready_attachment(database, cid, text)
+    first = await client.post(f"/v1/conversations/{cid}/runs", json={"message": "행사명만 알려줘", "attachment_ids": [aid]})
+    assert '"status": "completed"' in first.text
+    second = await client.post(f"/v1/conversations/{cid}/runs", headers={"Idempotency-Key": "two"},
+                              json={"message": "같은 파일의 장소와 시작 시간은?"})
+    assert '"status": "completed"' in second.text
+    assert aid in second.text and 'event: source' in second.text
+    assert any(json.loads(message["content"]).get("text") == text
+               for message in provider.messages[-1] if message["content"].startswith('{"untrusted_source"'))
+    # A subsequent turn still gets the source, without the client resubmitting IDs.
+    third = await client.post(f"/v1/conversations/{cid}/runs", headers={"Idempotency-Key": "three"},
+                             json={"message": "장소 다시 확인해 줘"})
+    assert '"status": "completed"' in third.text
+    assert any(json.loads(message["content"]).get("text") == text
+               for message in provider.messages[-1] if message["content"].startswith('{"untrusted_source"'))
+
+
+@pytest.mark.parametrize("unavailable", ["expired", "deleted", "missing"])
+async def test_followup_unavailable_source_never_calls_model(world, provider, database, monkeypatch, unavailable):
+    from modurouter.models import Attachment
+
+    monkeypatch.setattr(harness.settings, "max_model_calls_per_run", 1)
+    client, cid = world
+    aid = await ready_attachment(database, cid, "장소: 파란 강의실")
+    await client.post(f"/v1/conversations/{cid}/runs", json={"message": "행사명만", "attachment_ids": [aid]})
+    async with database.begin() as db:
+        row = await db.get(Attachment, aid)
+        if unavailable == "missing":
+            await db.delete(row)
+        elif unavailable == "expired":
+            row.expires_at = utcnow() - timedelta(seconds=1)
+        else:
+            row.extraction_status = "expired"
+            row.extracted_text = None
+    before = len(provider.calls)
+    result = await client.post(f"/v1/conversations/{cid}/runs", headers={"Idempotency-Key": "two"},
+                               json={"message": "같은 파일의 장소는?"})
+    assert 'ATTACHMENT_EXPIRED' in result.text
+    assert len(provider.calls) == before
+    replacement = await ready_attachment(database, cid, "장소: 새 강의실", "replacement.txt")
+    result = await client.post(f"/v1/conversations/{cid}/runs", headers={"Idempotency-Key": "three"},
+                              json={"message": "새 파일의 장소는?", "attachment_ids": [replacement]})
+    assert '"status": "completed"' in result.text
+    assert any("새 강의실" in m["content"] for m in provider.messages[-1])
+
+
+async def test_only_submitted_same_conversation_files_are_restored(world, provider, database, monkeypatch):
+    monkeypatch.setattr(harness.settings, "max_model_calls_per_run", 1)
+    client, cid = world
+    aid = await ready_attachment(database, cid, "PRIVATE ORIGINAL")
+    await ready_attachment(database, cid, "UNSUBMITTED FILE", "draft.txt")
+    await client.post(f"/v1/conversations/{cid}/runs", json={"message": "요약", "attachment_ids": [aid]})
+    result = await client.post(f"/v1/conversations/{cid}/runs", headers={"Idempotency-Key": "two"}, json={"message": "다시 요약"})
+    assert '"status": "completed"' in result.text
+    assert all("UNSUBMITTED FILE" not in m["content"] for m in provider.messages[-1])
+    other = (await client.post('/v1/conversations', json={"title": "다른 대화"})).json()["id"]
+    result = await client.post(f"/v1/conversations/{other}/runs", headers={"Idempotency-Key": "three"}, json={"message": "장소는?"})
+    assert '"status": "completed"' in result.text
+    assert all("PRIVATE ORIGINAL" not in m["content"] for m in provider.messages[-1])
+
+
+async def test_followup_keeps_multiple_files_and_replaces_with_new_set(world, provider, database, monkeypatch):
+    monkeypatch.setattr(harness.settings, "max_model_calls_per_run", 1)
+    client, cid = world
+    first = await ready_attachment(database, cid, "FIRST ORIGINAL", "first.txt")
+    second = await ready_attachment(database, cid, "SECOND ORIGINAL", "second.txt")
+    for key, attachments in [("one", [first, second]), ("two", [])]:
+        result = await client.post(f"/v1/conversations/{cid}/runs", headers={"Idempotency-Key": key},
+                                  json={"message": "자료 내용", "attachment_ids": attachments})
+        assert '"status": "completed"' in result.text
+        for text in ("FIRST ORIGINAL", "SECOND ORIGINAL"):
+            assert any(text in m["content"] for m in provider.messages[-1])
+    newer = await ready_attachment(database, cid, "NEW ORIGINAL", "new.txt")
+    for key, attachments in [("three", [newer]), ("four", [])]:
+        result = await client.post(f"/v1/conversations/{cid}/runs", headers={"Idempotency-Key": key},
+                                  json={"message": "새 자료 내용", "attachment_ids": attachments})
+        assert '"status": "completed"' in result.text
+        assert any("NEW ORIGINAL" in m["content"] for m in provider.messages[-1])
+        assert all("FIRST ORIGINAL" not in m["content"] and "SECOND ORIGINAL" not in m["content"]
+                   for m in provider.messages[-1])

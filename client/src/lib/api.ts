@@ -10,11 +10,19 @@ export function apiUrl(path: string): string {
   const origin = process.env.NEXT_PUBLIC_API_ORIGIN?.replace(/\/$/, '') || '';
   return `${origin}${path}`;
 }
+export async function fetchApi(url: string, init: RequestInit = {}): Promise<Response> {
+  try {
+    return await fetch(apiUrl(url), {...init, credentials: 'include'});
+  } catch (error) {
+    if (init.signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+    throw new ApiError('NETWORK_ERROR', '서버에 연결하지 못했습니다. 인터넷 연결을 확인한 뒤 다시 전송해 주세요.', 0);
+  }
+}
 export async function api<T>(url: string, init: RequestInit = {}, csrf?: string): Promise<T> {
   const headers = new Headers(init.headers);
   if (csrf) headers.set('X-CSRF-Token', csrf);
   if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json');
-  const response = await fetch(apiUrl(url), {...init, headers, credentials: 'include', cache: 'no-store'});
+  const response = await fetchApi(url, {...init, headers, cache: 'no-store'});
   if (!response.ok) {
     throw await responseError(response);
   }
@@ -42,6 +50,7 @@ const runErrors: Record<string, string> = {
   RUN_TIMEOUT: '응답 시간 제한에 도달했습니다. 질문이나 자료를 줄여 다시 시도해 주세요.',
   CONTENT_REFUSED: '모델이 이 요청에 답변하지 않았습니다. 질문을 바꿔 주세요.',
   TOOL_PLAN_INVALID: '자료 처리 요청을 확인하지 못했습니다. 다시 시도해 주세요.',
+  ATTACHMENT_EXPIRED: '이전 첨부파일이 만료되거나 삭제되어 원문을 확인할 수 없습니다. 파일을 다시 첨부해 주세요.',
   ATTACHMENT_NOT_READY: '첨부파일을 읽을 수 없습니다. 파일 상태를 확인하고 다시 첨부해 주세요.',
   SERVER_RESTARTED: '서버 재시작으로 답변이 중단되었습니다. 다시 시도해 주세요.',
   CANCELLED: '답변 생성을 중단했습니다.',
@@ -78,4 +87,44 @@ export async function consumeEvents(response: Response, receive: (kind:string, d
       if (done) return;
     }
   } finally { reader.releaseLock(); }
+}
+
+const attachmentErrors: Record<string, string> = {
+  PDF_ENCRYPTED: '암호화된 PDF는 읽을 수 없습니다. 암호를 해제한 파일을 다시 첨부해 주세요.',
+  PDF_PAGE_LIMIT: 'PDF는 20쪽까지 읽을 수 있습니다. 파일을 나누어 다시 첨부해 주세요.',
+  NO_EXTRACTABLE_TEXT: '읽을 수 있는 텍스트가 없습니다. 스캔 PDF는 페이지를 이미지로 저장하거나 내용을 TXT로 첨부해 주세요.',
+  FILE_ENCODING_INVALID: '텍스트 인코딩을 읽을 수 없습니다. UTF-8 형식의 TXT로 저장해 다시 첨부해 주세요.',
+  IMAGE_PIXEL_LIMIT: '이미지가 너무 큽니다. 2천만 픽셀 이하로 줄여 다시 첨부해 주세요.',
+  OCR_LOW_CONFIDENCE: '이미지의 글자를 정확히 읽지 못했습니다. 원본을 확인하고 선명한 이미지나 TXT로 다시 첨부해 주세요.',
+  OCR_FAILED: '이미지의 글자를 읽지 못했습니다. 선명한 이미지나 TXT로 다시 첨부해 주세요.',
+  OCR_TIMEOUT: '이미지를 읽는 시간이 초과되었습니다. 크기를 줄이거나 잠시 후 다시 첨부해 주세요.',
+  EXTRACTION_TIMEOUT: '파일을 읽는 시간이 초과되었습니다. 파일을 나누거나 잠시 후 다시 첨부해 주세요.',
+  WORKER_INTERRUPTED: '파일 처리 중 연결이 중단되었습니다. 파일을 삭제한 뒤 다시 첨부해 주세요.',
+  FILE_UNSUPPORTED: '지원하지 않는 파일입니다. TXT, PDF, PNG 또는 JPG로 다시 첨부해 주세요.',
+  UPLOAD_FAILED: '파일 업로드에 실패했습니다. 인터넷 연결을 확인한 뒤 다시 첨부해 주세요.',
+  ATTACHMENT_RESTORE_FAILED: '첨부 상태를 확인하지 못했습니다. 연결을 확인하고 대화를 다시 열거나 파일을 다시 첨부해 주세요.',
+};
+export function attachmentErrorMessage(attachment: Attachment): string | null {
+  if (attachment.status === 'expired') return '첨부파일이 만료되거나 삭제되었습니다. 파일을 제거한 뒤 다시 첨부해 주세요.';
+  if (!['failed', 'unavailable'].includes(attachment.status)) return null;
+  return attachmentErrors[attachment.error_code || ''] || '파일을 읽지 못했습니다. 파일을 확인하고 삭제한 뒤 다시 첨부해 주세요.';
+}
+
+export type SavedAttachment = Pick<Attachment, 'id' | 'filename'>;
+export function readSavedAttachments(value: string | null): SavedAttachment[] {
+  if (!value) return [];
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || parsed.length > 3 || parsed.some(a =>
+    !a || typeof a.id !== 'string' || typeof a.filename !== 'string')) throw new Error('저장한 첨부 정보를 읽지 못했습니다. 파일을 다시 첨부해 주세요.');
+  return parsed;
+}
+export async function restoreAttachments(saved: SavedAttachment[]): Promise<Attachment[]> {
+  return Promise.all(saved.map(async item => {
+    try { return await api<Attachment>(`/v1/attachments/${encodeURIComponent(item.id)}`); }
+    catch (error) {
+      if (error instanceof ApiError && error.status === 401) throw error;
+      return {...item, status: error instanceof ApiError && error.status === 404 ? 'expired' : 'unavailable',
+        error_code: 'ATTACHMENT_RESTORE_FAILED', truncated: false, expires_at: ''};
+    }
+  }));
 }
