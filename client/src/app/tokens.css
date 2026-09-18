@@ -1,0 +1,63 @@
+:root {
+  color-scheme: light dark;
+
+  --peer-color-canvas: white;
+  --peer-color-surface-hover: oklch(97% 0 0deg);
+  --peer-color-surface-active: oklch(92.2% 0 0deg);
+  --peer-color-ink: oklch(14.5% 0 0deg);
+  --peer-color-ink-muted: oklch(43.9% 0 0deg);
+  --peer-color-disabled: oklch(55.6% 0 0deg);
+  --peer-color-accent: oklch(48.8% 0.243 264.376deg);
+  --peer-color-danger: oklch(50.5% 0.213 27.518deg);
+  --peer-color-backdrop: rgb(0 0 0 / 20%);
+
+  --peer-font-sans: 'Die Grotesk A', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --peer-font-display: 'Die Grotesk B', var(--peer-font-sans);
+  --peer-font-mono: 'Paper Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --peer-text-xs: 0.75rem;
+  --peer-text-sm: 0.875rem;
+  --peer-text-md: 1rem;
+  --peer-leading-sm: 1.25rem;
+  --peer-leading-md: 1.5rem;
+  --peer-weight-regular: 400;
+  --peer-weight-bold: 700;
+
+  --peer-space-1: 0.25rem;
+  --peer-space-2: 0.5rem;
+  --peer-space-3: 0.75rem;
+  --peer-space-4: 1rem;
+  --peer-space-6: 1.5rem;
+  --peer-space-8: 2rem;
+  --peer-space-12: 3rem;
+
+  --peer-control-height: 2rem;
+  --peer-border-width: 1px;
+  --peer-radius: 0;
+  --peer-radius-round: 100%;
+  --peer-shadow-popup: 0.25rem 0.25rem 0 rgb(0 0 0 / 12%);
+  --peer-focus-ring: 2px solid var(--peer-color-ink);
+
+  --peer-layout-gutter: clamp(1rem, 3vw, 2rem);
+  --peer-layout-reading: 42rem;
+  --peer-layout-content: 80rem;
+  --peer-layout-sidebar: 15rem;
+
+  --peer-duration-fast: 100ms;
+  --peer-duration-medium: 150ms;
+  --peer-ease-out: ease-out;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --peer-color-canvas: oklch(14.5% 0 0deg);
+    --peer-color-accent: #93c5fd;
+    --peer-color-danger: #fca5a5;
+    --peer-color-surface-hover: oklch(26.9% 0 0deg);
+    --peer-color-surface-active: oklch(37.1% 0 0deg);
+    --peer-color-ink: white;
+    --peer-color-ink-muted: oklch(70.8% 0 0deg);
+    --peer-color-disabled: oklch(70.8% 0 0deg);
+    --peer-color-backdrop: rgb(0 0 0 / 50%);
+    --peer-shadow-popup: none;
+  }
+}
