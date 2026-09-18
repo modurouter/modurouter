@@ -1,0 +1,18 @@
+{$API_DOMAIN} {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+    request_body {
+        max_size 11MB
+    }
+    reverse_proxy api:8000 {
+        header_up X-Forwarded-For {remote_host}
+        flush_interval -1
+        transport http {
+            response_header_timeout 15s
+            read_timeout 130s
+        }
+    }
+}

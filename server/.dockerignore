@@ -1,0 +1,13 @@
+.env
+.env.*
+.ops
+.agents
+AGENTS.md
+.git
+.venv
+node_modules
+web
+tests
+**/__pycache__
+.pytest_cache
+.ruff_cache

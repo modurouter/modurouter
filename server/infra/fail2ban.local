@@ -1,0 +1,10 @@
+[DEFAULT]
+bantime = 1h
+findtime = 10m
+maxretry = 5
+banaction = nftables-multiport
+
+[sshd]
+enabled = true
+backend = systemd
+port = ssh

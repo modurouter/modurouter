@@ -1,0 +1,104 @@
+name: modurouter
+
+x-app: &app
+  image: modurouter-api:${RELEASE_TAG:-local}
+  build: .
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  environment: &environment
+    ENVIRONMENT: production
+    # API has no published port. Caddy replaces forwarded addresses at ingress.
+    FORWARDED_ALLOW_IPS: "*"
+    WEB_ORIGIN: ${PRODUCTION_WEB_ORIGIN:?Production web origin required}
+    API_PUBLIC_URL: ${PRODUCTION_API_ORIGIN:?Production API origin required}
+    DB_HOST: mariadb
+    DB_PORT: 3306
+    DB_NAME: modurouter
+    DB_USER: modurouter
+    DB_PASSWORD: ${DB_PASSWORD:?Database password required}
+    SESSION_SECRET: ${SESSION_SECRET:?Session secret required}
+    GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+    ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    ZENMUX_API_KEY: ${ZENMUX_API_KEY:-}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    UPSTAGE_API_KEY: ${UPSTAGE_API_KEY:-}
+    MODEL_ALLOWLIST: ${MODEL_ALLOWLIST:-}
+    TOOL_MODEL_ALLOWLIST: ${TOOL_MODEL_ALLOWLIST:-}
+    INPUT_PRICE_CAP_USD_PER_M: ${INPUT_PRICE_CAP_USD_PER_M:-0}
+    OUTPUT_PRICE_CAP_USD_PER_M: ${OUTPUT_PRICE_CAP_USD_PER_M:-0}
+    USER_DAILY_BUDGET_USD: ${USER_DAILY_BUDGET_USD:-0}
+    USER_DAILY_REQUEST_LIMIT: ${USER_DAILY_REQUEST_LIMIT:-30}
+    MAX_INPUT_TOKENS: ${MAX_INPUT_TOKENS:-16384}
+    MAX_OUTPUT_TOKENS: ${MAX_OUTPUT_TOKENS:-1024}
+    UPLOAD_DIRECTORY: /data/uploads
+  volumes:
+    - uploads:/data/uploads
+  networks: [backend, edge]
+  depends_on:
+    mariadb:
+      condition: service_healthy
+
+services:
+  proxy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?API hostname required}
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on: [api]
+    mem_limit: 192m
+  api:
+    <<: *app
+    mem_limit: 768m
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live')"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+  worker:
+    <<: *app
+    command: ["python", "-m", "modurouter.worker"]
+    mem_limit: 768m
+    cpus: 1
+  mariadb:
+    image: mariadb:11.8
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: modurouter
+      MARIADB_USER: modurouter
+      MARIADB_PASSWORD: ${DB_PASSWORD:?Database password required}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Database root password required}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_bin", "--skip-log-bin"]
+    volumes: ["database:/var/lib/mysql"]
+    networks: [backend]
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  database:
+  uploads:
+  caddy_data:
+  caddy_config:
+
+networks:
+  backend:
+    internal: true
+  edge:
