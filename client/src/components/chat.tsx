@@ -94,6 +94,7 @@ export function Chat() {
   });
   const recording = speech.recording;
   const disabled = streaming || workspace.busy || recording || speech.processing || (mode === 'student' && learningView.open && studio.busy);
+  const hasContent = Boolean(input.trim() || attachments.ready.length);
   useEffect(() => {
     if (!pendingVoice) return;
     if (disabled) return;
@@ -148,10 +149,12 @@ export function Chat() {
     try { await workspace.cancelRecovery(); await chatApi.stop(); } catch (error) { setRequestError(error instanceof Error ? error.message : '중지 요청에 실패했어요.'); }
   }
   function send(retryText?: string, retryFiles?: Attachment[], clearDraft = retryText === undefined, context = learningContext?.mode === mode ? learningContext.prompt : '') {
-    const text = (retryText ?? input).trim();
+    const files = retryFiles ?? attachments.ready;
+    const typedText = (retryText ?? input).trim();
+    const text = typedText || (files.length ? '첨부한 자료의 내용을 확인하고 핵심을 정리해 주세요.' : '');
     if (!text || disabled || useChatStore.getState().streaming || (clearDraft && retryFiles === undefined && attachments.blocked)) return;
-    if (retryText === undefined && mode === 'student' && learningView.open) { studio.voice(text); setInput(''); return; }
-    if (retryText === undefined && learningView.open && learningView.practice) {
+    if (retryText === undefined && typedText && mode === 'student' && learningView.open) { studio.voice(text); setInput(''); return; }
+    if (retryText === undefined && typedText && learningView.open && learningView.practice) {
       const index = practiceVoiceIndex(mode, learning.progress[mode], text);
       if (index !== null) { learning.choose(mode, index); setInput(''); return; }
       setRequestError('선택지 이름을 입력해 주세요.'); return;
@@ -160,7 +163,6 @@ export function Chat() {
     setPendingVoice(null);
     if (clearDraft) setInput('');
     setRequestError(''); speech.dismiss(); followConversation.current = true;
-    const files = retryFiles ?? attachments.ready;
     void chatApi.send(text, mode, { attachment_ids: files.map(file => file.id), attachments: files, search_enabled: search, learning_context: context }).then(() => {
       const last = useChatStore.getState().messages.at(-1);
       if (last?.activity?.status === 'complete') workspace.clearAttachments();
@@ -219,8 +221,8 @@ export function Chat() {
             {!!attachments.selected.length && <div className="composer-attachments">{attachments.selected.map(file => <div key={file.localId}><AttachmentCard file={file} onRemove={disabled ? undefined : () => attachments.toggle(file.localId)} /></div>)}</div>}
             {attachments.error && <p className="attachment-error" role="alert">{attachments.error}<button type="button" onClick={attachments.clearError} aria-label="첨부 안내 닫기"><X size={14} /></button></p>}
             <div className="composer-entry">
-            <textarea ref={textarea} aria-label="메시지 입력" placeholder={currentMode.placeholder} value={input} readOnly={recording || speech.processing || workspace.busy || (mode === 'student' && learningView.open && studio.busy)} rows={1} maxLength={12000} onChange={(e) => { setPendingVoice(null); setInput(e.target.value); }} />
-            <motion.button whileTap={{ scale: .92 }} className={`send-button ${input.trim() || streaming ? 'is-ready' : ''}`} type={streaming ? 'button' : 'submit'} onClick={streaming ? () => stop() : undefined} disabled={!streaming && (!input.trim() || disabled || attachments.blocked)} aria-label={streaming ? '응답 중지' : '메시지 전송'}>{streaming ? <Square size={17} fill="currentColor" /> : <ArrowUp size={29} strokeWidth={1.7} />}</motion.button>
+            <textarea ref={textarea} aria-label="메시지 입력" placeholder={attachments.ready.length ? '질문을 입력하거나 바로 전송해 자료를 요약해 보세요' : currentMode.placeholder} value={input} readOnly={recording || speech.processing || workspace.busy || (mode === 'student' && learningView.open && studio.busy)} rows={1} maxLength={12000} onChange={(e) => { setPendingVoice(null); setInput(e.target.value); }} />
+            <motion.button whileTap={{ scale: .92 }} className={`send-button ${hasContent || streaming ? 'is-ready' : ''}`} type={streaming ? 'button' : 'submit'} onClick={streaming ? () => stop() : undefined} disabled={!streaming && (!hasContent || disabled || attachments.blocked)} aria-label={streaming ? '응답 중지' : '메시지 전송'}>{streaming ? <Square size={17} fill="currentColor" /> : <ArrowUp size={29} strokeWidth={1.7} />}</motion.button>
             </div>
           </form>
           <motion.button className={`microphone glass ${recording ? 'is-recording' : ''}`} whileHover={{ scale: 1.045 }} whileTap={{ scale: .94 }} disabled={!recording && (streaming || workspace.busy || speech.processing)} onClick={() => { output.stop(); if (recording) speech.stop(); else { setPendingVoice(null); setRequestError(''); void speech.start(input); } }} aria-label={recording ? '녹음 종료 후 전송' : '음성 입력'} title="음성으로 입력하기 / 최대 10분" aria-pressed={recording}><GlassSurface radius={50} tone="accent" />{recording ? <Square size={21} strokeWidth={1.5} /> : <Mic size={27} strokeWidth={1.45} />}</motion.button>
