@@ -45,6 +45,8 @@
 
 - 서울시 공식 헤더 로고: https://www.seoul.go.kr/res_newseoul/images/logo_m.png
 - AI 디지털배움터 공식 푸터 로고: https://www.xn--2z1bw8k1pjz5ccumkb.kr/images/common/logo_ai_footer.png
+- 에이닷 공식 홈페이지 심벌: https://cdn.sktapollo.com/developers/poc/app.apollo.agent/static/home2/a.dot.svg
+- EXAONE 공식 심벌: https://www.lgresearch.ai/img/solution/exaone_logo.png
 - Cursor 공식 브랜드 패키지, Horizontal 2D Light SVG: https://cursor.com/brand
 - SpaceXAI: https://x.ai/ 공식 푸터의 SVG 경로 원본
 - 행사 및 SpaceXAI(Cursor, Grok) 크레딧 안내: https://luma.com/sfdsjsxi?locale=ko

@@ -211,6 +211,7 @@ export function Chat() {
           <Button aria-label="음성 입력 안내 닫기" onClick={speech.dismiss}><X size={18} /></Button>
         </motion.div>}</AnimatePresence>
         <div className="composer-tools"><AttachmentMenu attachments={attachments} disabled={disabled} labeled /><label className="search-mode" title="자동 모드에서는 질문에 따라 웹 자료를 확인합니다."><Globe size={16} aria-hidden="true"/><select aria-label="웹 검색 모드" disabled={disabled} value={search === null ? 'auto' : search ? 'on' : 'off'} onChange={event => setSearch(event.target.value === 'auto' ? null : event.target.value === 'on')}><option value="auto">웹 검색 자동</option><option value="on">웹 검색 항상</option><option value="off">웹 검색 끄기</option></select></label></div>
+        <div className="composer-dock">
         <div className="input-row">
           <form ref={composer} className={`composer glass ${draggingFile ? 'is-file-over' : ''}`} onPaste={e => { if (!disabled && e.clipboardData.files.length) { e.preventDefault(); void attachments.add(Array.from(e.clipboardData.files)); } }} onSubmit={(e) => { e.preventDefault(); send(); }}>
             <GlassSurface />
@@ -231,6 +232,7 @@ export function Chat() {
           {modes.map((item, index) => <button key={item.id} type="button" role="radio" aria-checked={mode === item.id} tabIndex={mode === item.id ? 0 : -1} onClick={() => setMode(item.id)} onKeyDown={(e) => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = e.key === 'Home' ? 0 : e.key === 'End' ? 2 : (index + (e.key === 'ArrowRight' ? 1 : 2)) % 3; setMode(modes[next].id); (e.currentTarget.parentElement?.querySelectorAll('button')[next] as HTMLButtonElement)?.focus(); } }}>{item.label}</button>)}
         </div>
         <ModelSettings />
+        </div>
         </div>
       </div>
     </section>

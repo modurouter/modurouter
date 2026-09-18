@@ -15,7 +15,9 @@ const brands = [
   { name: 'AI 디지털배움터', file: 'digital-learning.png', kind: '학습 서비스', className: 'brand-learning' },
   { name: '평생교육이용권', file: 'lifelong-voucher.svg', kind: '평생학습 서비스', className: 'brand-voucher' },
   { name: 'Upstage', file: 'upstage.avif', kind: 'AI 모델 개발사', className: 'brand-upstage' },
+  { name: '에이닷', file: 'adot.svg', kind: 'AI 서비스', className: 'brand-adot', label: '에이닷' },
   { name: 'LG AI Research', file: 'lg-ai-research.png', kind: 'AI 연구기관', className: 'brand-lg' },
+  { name: 'EXAONE', file: 'exaone.png', kind: 'AI 모델', className: 'brand-exaone', label: 'EXAONE' },
   { name: 'SpaceXAI', file: 'spacexai.svg', kind: '행사 크레딧 지원', className: 'brand-spacexai' },
   { name: 'Cursor', file: 'cursor.svg', kind: '행사 지원 도구', className: 'brand-cursor' },
 ];
@@ -27,14 +29,14 @@ function BrandRibbon() {
   const playback = useRef<ReturnType<typeof animate> | null>(null);
   useEffect(() => {
     if (reduced) { x.set('0%'); return; }
-    playback.current = animate(x, ['0%', '-50%'], { duration: 63, ease: 'linear', repeat: Infinity });
+    playback.current = animate(x, ['0%', '-50%'], { duration: 81, ease: 'linear', repeat: Infinity });
     return () => { playback.current?.stop(); };
   }, [reduced, x]);
   useEffect(() => {
     if (hovered) playback.current?.pause();
     else playback.current?.play();
   }, [hovered, reduced]);
-  return <div className={`brand-ribbon ${reduced ? 'is-still' : ''}`} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+  return <div className="brand-ribbon" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
     <div className="brand-window">
       <motion.div className="brand-track" style={{ x }}>
         {[0, 1].map(copy => <div key={copy} className="brand-group" aria-hidden={copy === 1 ? true : undefined}>
@@ -42,6 +44,7 @@ function BrandRibbon() {
             {/* Official brand assets are served locally without altering their geometry. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={`/brands/${brand.file}`} alt={copy ? '' : `${brand.name} / ${brand.kind}`} />
+            {brand.label && <span aria-hidden="true">{brand.label}</span>}
           </div>)}
         </div>)}
       </motion.div>
