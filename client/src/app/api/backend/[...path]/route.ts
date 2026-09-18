@@ -14,8 +14,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pa
 async function forward(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const path = '/' + (await context.params).path.join('/');
   const allowed = request.method === 'GET'
-    ? /^\/v1\/(me|config|usage|models(?:\/status)?|conversations(?:\/[a-f0-9-]+)?|runs\/[a-f0-9-]+)$/.test(path)
-    : /^\/(auth\/guest|v1\/audio\/transcriptions|v1\/conversations(?:\/[a-f0-9-]+\/runs)?|v1\/runs\/[a-f0-9-]+\/cancel)$/.test(path);
+    ? /^\/v1\/(attachments\/[a-f0-9-]+|me|config|usage|models(?:\/status)?|conversations(?:\/[a-f0-9-]+)?|runs\/[a-f0-9-]+)$/.test(path)
+    : /^\/(v1\/attachments|auth\/guest|v1\/audio\/transcriptions|v1\/conversations(?:\/[a-f0-9-]+\/runs)?|v1\/runs\/[a-f0-9-]+\/cancel)$/.test(path);
   if (!allowed) return Response.json({ message: '지원하지 않는 요청입니다.' }, { status: 404 });
   // Next.js may construct nextUrl using its bind host (0.0.0.0), not the
   // browser-facing host. Never trust arbitrary Host/X-Forwarded-Host as an allowlist.
@@ -43,7 +43,7 @@ async function forward(request: NextRequest, context: { params: Promise<{ path: 
   try {
     const response = await fetch(new URL(path, upstream), {
       method: request.method, headers, cache: 'no-store', redirect: 'manual',
-      body: request.method === 'POST' ? (path === '/v1/audio/transcriptions' ? await request.arrayBuffer() : await request.text()) : undefined,
+      body: request.method === 'POST' ? ((path === '/v1/audio/transcriptions' || path === '/v1/attachments') ? await request.arrayBuffer() : await request.text()) : undefined,
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(path === '/v1/audio/transcriptions' ? 330_000 : 150_000)]),
     });
     const out = new Headers({ 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', 'Content-Type': response.headers.get('content-type') || 'application/json' });

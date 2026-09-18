@@ -19,7 +19,7 @@ function getDevice() {
   return devicePromise;
 }
 
-export function GlassSurface({ radius = 32 }: { radius?: number }) {
+export function GlassSurface({ radius = 32, tone = 'neutral' }: { radius?: number; tone?: 'neutral' | 'accent' | 'gray' }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -50,7 +50,7 @@ export function GlassSurface({ radius = 32 }: { radius?: number }) {
         const container = scene.add(new Container({
           blur: 8, thickness: 22, ior: 1.46, bezelWidth: 10,
           surfaceProfile: 'convex', dispersion: 0.025,
-          tint: { r: 1, g: 1, b: 1, a: 0.08 },
+          tint: tone === 'accent' ? { r: 252 / 255, g: 182 / 255, b: 3 / 255, a: 0.12 } : tone === 'gray' ? { r: 0.62, g: 0.62, b: 0.62, a: 0.16 } : { r: 1, g: 1, b: 1, a: 0.08 },
           lightDirection: -Math.PI / 4, specularStrength: 0.65,
           specularWidth: 2, oppositeSpecularStrength: 0.2,
           shadowColor: { r: 0, g: 0, b: 0, a: 0 },
@@ -83,7 +83,7 @@ export function GlassSurface({ radius = 32 }: { radius?: number }) {
               // The page background is intentionally solid. Supply that actual
               // color as a GPU texture instead of capturing HTML into a canvas.
               const encoder = device.createCommandEncoder();
-              const pass = encoder.beginRenderPass({ colorAttachments: [{ view: backdrop.createView(), clearValue: { r: 252 / 255, g: 253 / 255, b: 1, a: 1 }, loadOp: 'clear', storeOp: 'store' }] });
+              const pass = encoder.beginRenderPass({ colorAttachments: [{ view: backdrop.createView(), clearValue: tone === 'accent' ? { r: 252 / 255, g: 182 / 255, b: 3 / 255, a: 1 } : tone === 'gray' ? { r: 0.9, g: 0.9, b: 0.9, a: 1 } : { r: 252 / 255, g: 253 / 255, b: 1, a: 1 }, loadOp: 'clear', storeOp: 'store' }] });
               pass.end();
               device.queue.submit([encoder.finish()]);
             }
@@ -138,6 +138,6 @@ export function GlassSurface({ radius = 32 }: { radius?: number }) {
       backdrop?.destroy();
       context?.unconfigure();
     };
-  }, [radius]);
+  }, [radius, tone]);
   return <div className="gpu-glass" aria-hidden="true" data-renderer={ready ? 'liquid-dom-webgpu' : 'initializing'}><canvas ref={canvasRef} data-ready={ready} style={{ opacity: ready ? 1 : 0 }} /></div>;
 }

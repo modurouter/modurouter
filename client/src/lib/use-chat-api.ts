@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useRef } from 'react';
-import { api, apiUrl, ApiError, consumeEvents, ensureSession, responseError, runErrorMessage, type Run, type Source, type User } from './api';
+import { api, apiUrl, ApiError, consumeEvents, ensureSession, responseError, runErrorMessage, type Attachment, type Run, type Source, type User } from './api';
 import { useModelSettings, effortOptions } from './model-settings';
 import { useChatStore, type Mode } from './chat-store';
+import { composeLearningMessage } from './learning-journeys';
 
 const stages: Record<string, string> = { accepted: '질문 접수', preparing: '대화 준비 중', model: '답변 준비 중', tool: '자료 확인 중', streaming: '답변 작성 중', context_truncated: '입력 한도에 맞춰 일부 맥락 제외', tool_warning: '일부 자료 확인 실패' };
 const active = (run: Run) => ['accepted', 'preparing', 'model', 'tool', 'streaming'].includes(run.status);
@@ -30,7 +31,20 @@ export function useChatApi() {
     catch { operation.cancelling = false; operation.cancel = false; throw new Error('중지 요청을 보내지 못했어요. 다시 눌러 주세요.'); }
   }
 
-  async function send(text: string, mode: Mode) {
+  const preparing = useRef<Promise<{ id: string; csrf: string }> | null>(null);
+  async function prepareConversation() {
+    if (!preparing.current) preparing.current = (async () => {
+      session.current = await ensureSession();
+      if (!conversation.current) {
+        const created = await api<{ id: string }>('/v1/conversations', { method: 'POST', body: JSON.stringify({ title: '새 대화' }) }, session.current.csrf_token);
+        conversation.current = created.id;
+      }
+      return { id: conversation.current, csrf: session.current.csrf_token };
+    })().finally(() => { preparing.current = null; });
+    return preparing.current;
+  }
+
+  async function send(text: string, mode: Mode, attachments: Attachment[] = [], learningContext = '') {
     if (current.current) return;
     const store = useChatStore.getState();
     const operation: { runId?: string; cancel: boolean; cancelling: boolean } = { cancel: false, cancelling: false };
@@ -42,7 +56,7 @@ export function useChatApi() {
     let content = '';
     let sources: Source[] = [];
     let terminal = false;
-    store.add({ id: crypto.randomUUID(), role: 'user', content: text });
+    store.add({ id: crypto.randomUUID(), role: 'user', content: text, attachments });
     store.add({ id, role: 'assistant', content: '', activity: { startedAt, status: 'writing', stage: events[0], events } });
     const stage = (value: string) => {
       if (events.at(-1) !== value) events = [...events, value];
@@ -66,19 +80,14 @@ export function useChatApi() {
       }
     };
     try {
-      session.current = await ensureSession();
-      if (operation.cancel) { store.patch(id, { activity: { startedAt, finishedAt: Date.now(), status: 'stopped', events } }); return; }
-      if (!conversation.current) {
-        const created = await api<{ id: string }>('/v1/conversations', { method: 'POST', body: JSON.stringify({ title: '새 대화' }) }, session.current.csrf_token);
-        conversation.current = created.id;
-      }
+      await prepareConversation();
       if (operation.cancel) { store.patch(id, { activity: { startedAt, finishedAt: Date.now(), status: 'stopped', events } }); return; }
       const settings = useModelSettings.getState();
-      const body = JSON.stringify({ ...(settings.loaded ? { model: settings.model === 'auto' ? null : settings.model, reasoning_effort: (settings.model === 'auto' ? settings.models.some(m => m.efforts.length) : settings.models.find(m => m.id === settings.model)?.efforts.length) ? effortOptions[settings.effort].id : null } : {}), message: text, attachment_ids: [], search_enabled: false, explanation_mode: mode === 'student' ? 'standard' : 'simple' });
+      const body = JSON.stringify({ ...(settings.loaded ? { model: settings.model === 'auto' ? null : settings.model, reasoning_effort: (settings.model === 'auto' ? settings.models.some(m => m.efforts.length) : settings.models.find(m => m.id === settings.model)?.efforts.length) ? effortOptions[settings.effort].id : null } : {}), message: composeLearningMessage(text, mode, learningContext), attachment_ids: attachments.map(file => file.id), search_enabled: false, explanation_mode: mode === 'student' ? 'standard' : 'simple' });
       const key = uncertain.current?.body === body && uncertain.current.conversation === conversation.current ? uncertain.current.key : crypto.randomUUID();
-      uncertain.current = { body, key, conversation: conversation.current };
+      uncertain.current = { body, key, conversation: conversation.current! };
       stage('질문 전송 중');
-      const response = await fetch(apiUrl(`/v1/conversations/${conversation.current}/runs`), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': session.current.csrf_token, 'Idempotency-Key': key }, body });
+      const response = await fetch(apiUrl(`/v1/conversations/${conversation.current}/runs`), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': session.current!.csrf_token, 'Idempotency-Key': key }, body });
       if (!response.ok) throw await responseError(response);
       if (response.headers.get('content-type')?.includes('application/json')) applyRun(await response.json() as Run);
       else await consumeEvents(response, (kind, data) => {
@@ -100,5 +109,5 @@ export function useChatApi() {
       store.patch(id, { error: error instanceof Error ? error.message : '서버에 연결하지 못했어요.', activity: { startedAt, finishedAt: Date.now(), status: 'error', events } });
     } finally { current.current = null; store.setStreaming(false); }
   }
-  return { send, stop };
+  return { send, stop, prepareConversation };
 }
