@@ -123,10 +123,12 @@ def _url(source: dict) -> str:
 
 
 def build_context(history: list[dict], question: str, sources: list[dict], simple: bool,
-                  limit: int, page_read_failed: bool = False) -> tuple[list[dict], bool]:
+                  limit: int, page_read_failed: bool = False, guidance: str = "") -> tuple[list[dict], bool]:
     system = SYSTEM + ("\n쉬운 단어와 짧은 문장으로 설명하고 예를 들어 주세요." if simple else "")
     if page_read_failed:
         system += "\n일부 원문 페이지 읽기에 실패했습니다. 실제 자료의 scope만 확인한 내용으로 다루고, 열지 못한 페이지를 읽었다고 주장하지 마세요."
+    if guidance:
+        system += "\n" + guidance
     base = [{"role": "system", "content": system}]
     current = {"role": "user", "content": question}
     if estimate_tokens(base + [current]) > limit:

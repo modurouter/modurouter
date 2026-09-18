@@ -11,6 +11,8 @@ class RunInput(BaseModel):
     model: str | None = Field(default=None, max_length=255)
     reasoning_effort: Literal["minimal", "low"] | None = None
     message: str = Field(min_length=1, max_length=12000)
+    audience_mode: Literal["senior", "child", "student"] | None = None
+    learning_context: str | None = Field(default=None, max_length=4000)
     attachment_ids: list[str] = Field(default_factory=list, max_length=3)
     search_enabled: bool | None = None
     explanation_mode: Literal["standard", "simple"] = "standard"

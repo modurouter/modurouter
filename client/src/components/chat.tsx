@@ -22,6 +22,8 @@ import { LearningHeader } from './learning-header';
 import { useSpeechOutput } from '@/lib/use-speech-output';
 import { storage, useChatWorkspace } from '@/lib/use-chat-workspace';
 import { WorkspaceMenu } from './workspace-menu';
+import { useStudyStudio } from '@/lib/use-study-studio';
+import { StudyStudio } from './study-studio';
 
 export function Chat() {
   const { mode, setMode, messages, streaming } = useChatStore();
@@ -35,6 +37,7 @@ export function Chat() {
   const [copyError, setCopyError] = useState<string | null>(null);
   const chatApi = useChatApi();
   const workspace = useChatWorkspace();
+  const studio = useStudyStudio(workspace.user);
   const output = useSpeechOutput();
   const attachments = useAttachments(workspace);
   const [search, setSearch] = useState<boolean | null>(null);
@@ -59,6 +62,7 @@ export function Chat() {
   const selected = modes.findIndex((m) => m.id === mode);
   const currentMode = modes[selected];
   const speech = useSpeechInput((text, transcript) => {
+    if (mode === 'student' && learningView.open) { studio.voice(transcript); return; }
     if (learningView.open && learningView.practice) {
       if (/뒤로|전체.*활동/.test(transcript)) { setLearningView({ open: true, topicId: null }); return; }
       if (/다시.*연습|처음부터/.test(transcript)) { learning.restart(mode); return; }
@@ -88,7 +92,7 @@ export function Chat() {
     setPendingVoice(text);
   });
   const recording = speech.recording;
-  const disabled = streaming || workspace.busy || recording || speech.processing;
+  const disabled = streaming || workspace.busy || recording || speech.processing || (mode === 'student' && learningView.open && studio.busy);
   useEffect(() => {
     if (!pendingVoice) return;
     if (disabled) return;
@@ -145,6 +149,7 @@ export function Chat() {
   function send(retryText?: string, retryFiles?: Attachment[], clearDraft = retryText === undefined, context = learningContext?.mode === mode ? learningContext.prompt : '') {
     const text = (retryText ?? input).trim();
     if (!text || disabled || useChatStore.getState().streaming || (clearDraft && retryFiles === undefined && attachments.blocked)) return;
+    if (retryText === undefined && mode === 'student' && learningView.open) { studio.voice(text); setInput(''); return; }
     if (retryText === undefined && learningView.open && learningView.practice) {
       const index = practiceVoiceIndex(mode, learning.progress[mode], text);
       if (index !== null) { learning.choose(mode, index); setInput(''); return; }
@@ -167,9 +172,19 @@ export function Chat() {
     if (rect) setMode(modes[Math.max(0, Math.min(2, Math.floor((x - rect.left) / (rect.width / 3))))].id);
   }
   return <MotionConfig reducedMotion="user"><main ref={root} className={`app mode-${mode} ${messages.length ? 'has-messages' : ''}`}>
-    <LearningHeader navigation={<WorkspaceMenu workspace={workspace} disabled={disabled} onNavigate={() => { output.stop(); speech.dismiss(); setInput(''); setPendingVoice(null); setLearningContext(null); }} />} mode={mode} progress={learning.progress[mode]} ready={learning.ready} onPracticeChoice={index => { setRequestError(''); learning.choose(mode, index); }} onRestart={() => learning.restart(mode)} onClear={() => learning.clear(mode)} view={learningView} onViewChange={view => { if (view.practice) setLearningContext(null); setLearningView(view); }} disabled={disabled} onChoose={(prompt, label) => { setLearningContext({ mode, prompt, label }); send(label, attachments.ready, false, prompt); }} />
+    <LearningHeader studentContent={<StudyStudio studio={studio} disabled={disabled} guest={workspace.user?.guest ?? true} onCoach={async () => {
+      const id = await studio.conversation();
+      if (!id) return;
+      output.stop(); setPendingVoice(null);
+      await workspace.openConversation(id);
+      if (useChatStore.getState().conversationId !== id) return;
+      setLearningContext({mode:'student',label:studio.task?.title || '학습 스튜디오',prompt:''});
+      setLearningView(view => ({...view,open:false}));
+      setInput('지금 학습 단계에서 제가 생각해 볼 점을 하나씩 알려 주세요.');
+      textarea.current?.focus();
+    }}/>} navigation={<WorkspaceMenu workspace={workspace} disabled={disabled} onNavigate={() => { output.stop(); speech.dismiss(); setInput(''); setPendingVoice(null); setLearningContext(null); }} />} mode={mode} progress={learning.progress[mode]} ready={learning.ready} onPracticeChoice={index => { setRequestError(''); learning.choose(mode, index); }} onRestart={() => learning.restart(mode)} onClear={() => learning.clear(mode)} view={learningView} onViewChange={view => { if (view.practice) setLearningContext(null); setLearningView(view); }} disabled={disabled} onChoose={(prompt, label) => { setLearningContext({ mode, prompt, label }); send(label, attachments.ready, false, prompt); }} />
     <section className="workspace" aria-label="대화">
-      {learningContext?.mode === mode && <div className="learning-context"><span>{learningContext.label}</span><button type="button" aria-label="학습 마치기" onClick={() => setLearningContext(null)}><X size={14} /></button></div>}
+      {learningContext?.mode === mode && <div className="learning-context"><span>{learningContext.label}</span><button type="button" aria-label="학습 마치기" disabled={disabled} onClick={() => { if (learningContext.mode === 'student') { workspace.newConversation(); setInput(''); } setLearningContext(null); }}><X size={14} /></button></div>}
       {messages.length > 0 && <div className="conversation" role="log" aria-label="대화 내용" aria-live="off">
         {messages.map((message, messageIndex) => <motion.article initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} key={message.id} className={`message message-${message.role}`} aria-label={message.role === 'user' ? '내 질문' : '답변'}>
           {!!message.attachments?.length && <div className="message-attachments">{message.attachments.map(file => <AttachmentCard key={file.id} file={file} />)}</div>}
@@ -195,20 +210,20 @@ export function Chat() {
           <p>{speech.notice}</p>
           <Button aria-label="음성 입력 안내 닫기" onClick={speech.dismiss}><X size={18} /></Button>
         </motion.div>}</AnimatePresence>
+        <div className="composer-tools"><AttachmentMenu attachments={attachments} disabled={disabled} labeled /><label className="search-mode" title="자동 모드에서는 질문에 따라 웹 자료를 확인합니다."><Globe size={16} aria-hidden="true"/><select aria-label="웹 검색 모드" disabled={disabled} value={search === null ? 'auto' : search ? 'on' : 'off'} onChange={event => setSearch(event.target.value === 'auto' ? null : event.target.value === 'on')}><option value="auto">웹 검색 자동</option><option value="on">웹 검색 항상</option><option value="off">웹 검색 끄기</option></select></label></div>
         <div className="input-row">
           <form ref={composer} className={`composer glass ${draggingFile ? 'is-file-over' : ''}`} onPaste={e => { if (!disabled && e.clipboardData.files.length) { e.preventDefault(); void attachments.add(Array.from(e.clipboardData.files)); } }} onSubmit={(e) => { e.preventDefault(); send(); }}>
             <GlassSurface />
             {!!attachments.selected.length && <div className="composer-attachments">{attachments.selected.map(file => <div key={file.localId}><AttachmentCard file={file} onRemove={disabled ? undefined : () => attachments.toggle(file.localId)} /></div>)}</div>}
             {attachments.error && <p className="attachment-error" role="alert">{attachments.error}<button type="button" onClick={attachments.clearError} aria-label="첨부 안내 닫기"><X size={14} /></button></p>}
             <div className="composer-entry">
-            <AttachmentMenu attachments={attachments} disabled={disabled} />
-            <textarea ref={textarea} aria-label="메시지 입력" placeholder={currentMode.placeholder} value={input} readOnly={recording || speech.processing} rows={1} maxLength={12000} onChange={(e) => { setPendingVoice(null); setInput(e.target.value); }} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); } }} />
+            <textarea ref={textarea} aria-label="메시지 입력" placeholder={currentMode.placeholder} value={input} readOnly={recording || speech.processing || workspace.busy || (mode === 'student' && learningView.open && studio.busy)} rows={1} maxLength={12000} onChange={(e) => { setPendingVoice(null); setInput(e.target.value); }} />
             <motion.button whileTap={{ scale: .92 }} className={`send-button ${input.trim() || streaming ? 'is-ready' : ''}`} type={streaming ? 'button' : 'submit'} onClick={streaming ? () => stop() : undefined} disabled={!streaming && (!input.trim() || disabled || attachments.blocked)} aria-label={streaming ? '응답 중지' : '메시지 전송'}>{streaming ? <Square size={17} fill="currentColor" /> : <ArrowUp size={29} strokeWidth={1.7} />}</motion.button>
             </div>
           </form>
           <motion.button className={`microphone glass ${recording ? 'is-recording' : ''}`} whileHover={{ scale: 1.045 }} whileTap={{ scale: .94 }} disabled={!recording && (streaming || workspace.busy || speech.processing)} onClick={() => { output.stop(); if (recording) speech.stop(); else { setPendingVoice(null); setRequestError(''); void speech.start(input); } }} aria-label={recording ? '녹음 종료 후 전송' : '음성 입력'} title="음성으로 입력하기 / 최대 10분" aria-pressed={recording}><GlassSurface radius={50} tone="accent" />{recording ? <Square size={21} strokeWidth={1.5} /> : <Mic size={27} strokeWidth={1.45} />}</motion.button>
         </div>
-        <div className="composer-tools"><label className="search-mode" title="자동 모드에서는 질문에 따라 웹 자료를 확인합니다."><Globe size={16} aria-hidden="true"/><select aria-label="웹 검색 모드" disabled={disabled} value={search === null ? 'auto' : search ? 'on' : 'off'} onChange={event => setSearch(event.target.value === 'auto' ? null : event.target.value === 'on')}><option value="auto">웹 검색 자동</option><option value="on">웹 검색 항상</option><option value="off">웹 검색 끄기</option></select></label></div>
+
         <div className="settings-row">
         <div className="mode-track glass" role="radiogroup" aria-label="대화 모드" ref={modeTrack} onPointerDown={(e) => { pointerStart.current = e.clientX; }} onPointerMove={(e) => { if (pointerStart.current !== null && Math.abs(e.clientX - pointerStart.current) > 6) { e.currentTarget.setPointerCapture(e.pointerId); selectFromPointer(e.clientX); } }} onPointerUp={() => { pointerStart.current = null; }} onPointerCancel={() => { pointerStart.current = null; }}>
           <GlassSurface radius={21} />

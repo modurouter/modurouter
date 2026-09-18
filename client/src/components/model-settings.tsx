@@ -5,7 +5,7 @@ import { Popover } from '@base-ui/react/popover';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
 import { Slider } from '@base-ui/react/slider';
-import { SlidersHorizontal, X } from 'lucide-react';
+import { SlidersHorizontal, Search, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { GlassSurface } from './glass-surface';
 import { effortOptions, modelKey, useModelSettings } from '@/lib/model-settings';
@@ -14,7 +14,8 @@ export function ModelSettings() {
   const { model, models, effort, setModel, setEffort, load, loading, error, loaded, allowManual } = useModelSettings();
   const [query, setQuery] = useState('');
   const selected = models.find(option => modelKey(option) === model);
-  const modelOptions = [{ id: 'auto', name: '자동 선택', description: '관리자 기준으로 선택' }, { id: 'free', name: '무료 모델만', description: '유료 모델로 전환하지 않음' }, ...(allowManual ? models.map(option => ({ id: modelKey(option), name: option.name, description: `${option.provider} / ${option.is_free ? '무료' : `입력 $${Number(option.input_per_m)} / 출력 $${Number(option.output_per_m)} (1M 토큰)`}` })) : [])];
+  const modelOptions = [{ id: 'auto', name: '자동 선택', description: '관리자 기준으로 선택' }, { id: 'free', name: '무료 모델만', description: '유료 모델로 전환하지 않음' }, ...(allowManual ? models.map(option => ({ id: modelKey(option), name: option.name || option.model_id, description: `${option.provider} / ${option.is_free ? '무료' : `입력 $${Number(option.input_per_m)} / 출력 $${Number(option.output_per_m)} (1M 토큰)`}` })) : [])];
+  const matchingModels = modelOptions.filter(option => ['auto','free'].includes(option.id) || `${option.name} ${option.description} ${option.id}`.toLowerCase().includes(query.trim().toLowerCase()));
   const supported = ['auto', 'free'].includes(model) ? [...new Set(models.filter(option => model === 'free' ? option.is_free : option.auto_eligible).flatMap(option => option.efforts || []))] : selected?.efforts || [];
   const adjustable = loaded && supported.length > 1;
   const spring = { type: 'spring' as const, stiffness: 420, damping: 34 };
@@ -35,12 +36,13 @@ export function ModelSettings() {
             </div>
             <section className="model-section" aria-labelledby="model-list-label">
               <h3 id="model-list-label" className="sr-only">모델</h3>
-              <input className="model-search" type="search" aria-label="모델 검색" placeholder="모델 검색" value={query} onChange={event => setQuery(event.target.value)} />
+              <div className="model-search-surface"><GlassSurface radius={16} /><Search size={17} aria-hidden="true" /><input className="model-search" type="search" aria-label="모델 검색" placeholder="모델 이름이나 제공처 검색" value={query} onChange={event => setQuery(event.target.value)} />{query && <button type="button" className="model-search-clear" aria-label="모델 검색 지우기" onClick={() => setQuery('')}><X size={15} /></button>}</div>
               <RadioGroup value={model} onValueChange={setModel} className="model-options" aria-labelledby="model-list-label">
-                {modelOptions.filter(option => ['auto','free'].includes(option.id) || `${option.name} ${option.description}`.toLowerCase().includes(query.toLowerCase())).map((option) => <Radio.Root key={option.id} value={option.id} className="model-option">
+                {matchingModels.map((option) => <Radio.Root key={option.id} value={option.id} className="model-option">
                   <span className="model-option-copy"><span>{option.name}</span><small>{option.description}</small></span>
                 </Radio.Root>)}
               </RadioGroup>
+              {query.trim() && matchingModels.length === 2 && <p className="model-search-empty" role="status">검색 조건에 맞는 모델이 없어요.</p>}
             </section>
             {loading && <p className="settings-api-note" role="status">모델 목록을 불러오는 중…</p>}
             {error && <p className="settings-api-note" role="status">{error} <button onClick={() => void load()}>다시 시도</button></p>}

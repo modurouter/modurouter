@@ -23,10 +23,11 @@ def test_single_migration_head_preserves_deployed_speech_revision():
     config = Config()
     config.set_main_option('script_location', str(VERSIONS.parent))
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ['0008']
+    assert script.get_heads() == ['0009']
     assert Path(script.get_revision('0006').path).name == '0006_speech_requests.py'
     assert script.get_revision('0007').down_revision == '0006'
     assert script.get_revision('0008').down_revision == '0007'
+    assert script.get_revision('0009').down_revision == '0008'
 
 
 def test_upgrade_from_deployed_speech_schema_preserves_rows():
@@ -40,6 +41,8 @@ def test_upgrade_from_deployed_speech_schema_preserves_rows():
         connection.exec_driver_sql("INSERT INTO speech_requests (id,user_id,quota_date,reserved_usd,status,created_at) VALUES ('existing-speech','existing-user','2026-09-18',0.03,'pending','2026-09-18')")
         apply(connection, '0007_routing_choice')
         apply(connection, '0008_runtime_settings')
+        connection.exec_driver_sql('CREATE TABLE conversations (id VARCHAR(36) PRIMARY KEY)')
+        apply(connection, '0009_learning_sessions')
         assert connection.exec_driver_sql('SELECT id, routing, selected_provider FROM runs').one() == ('existing-run', None, None)
         assert connection.exec_driver_sql('SELECT id, status FROM speech_requests').one() == ('existing-speech', 'pending')
         assert 'runtime_settings' in sa.inspect(connection).get_table_names()

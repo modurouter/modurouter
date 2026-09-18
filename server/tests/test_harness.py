@@ -743,3 +743,41 @@ async def test_free_only_rejects_paid_catalog_before_admission(world, database, 
     assert provider.calls == []
     async with database() as db:
         assert await db.scalar(select(func.count()).select_from(Run)) == 0
+
+
+async def test_auto_search_failure_keeps_chat_working_and_discloses_limit(world, provider, monkeypatch):
+    async def unavailable(_query):
+        raise AppError("SEARCH_UNAVAILABLE", "웹 검색을 사용할 수 없습니다.", 503, True)
+    monkeypatch.setattr(harness, "search_web", unavailable)
+    client, identifier = world
+    response = await client.post(f"/v1/conversations/{identifier}/runs", json={"message":"최근 공부 방법을 설명해 주세요.", "search_enabled":None})
+    assert 'event: delta' in response.text and 'event: error' not in response.text
+    assert provider.calls
+    assert '최신 정보나 출처를 확인했다고 말하지 말고' in provider.messages[-1][0]['content']
+    assert '최신 웹 정보는 확인하지 못했습니다' in response.text
+
+
+async def test_student_guidance_never_becomes_a_search_query(world, provider, monkeypatch):
+    async def unexpected(_query):
+        raise AssertionError('An ordinary greeting must not trigger search')
+    monkeypatch.setattr(harness, 'search_web', unexpected)
+    client, identifier = world
+    response = await client.post(f'/v1/conversations/{identifier}/runs', json={'message':'안녕', 'audience_mode':'student', 'learning_context':'출처와 조사 방법을 배우는 활동', 'search_enabled':None})
+    assert 'event: delta' in response.text and 'event: error' not in response.text
+    assert '자기주도 학습 코치' in provider.messages[-1][0]['content']
+    assert provider.messages[-1][-1]['content'] == '안녕'
+
+
+async def test_saved_learning_session_reaches_model_and_keeps_history_clean(world, provider):
+    client, _ = world
+    state = (await client.post('/v1/learning/tasks/my-problem/session')).json()
+    draft = '저장한 풀이에서 괄호를 풀 때 상수에 곱하는 것을 빠뜨렸다.'
+    saved = await client.post(f'/v1/learning/sessions/{state["id"]}', json={
+        'revision':state['revision'], 'request_id':'save-draft', 'action':'draft', 'answer':draft})
+    assert saved.status_code == 200
+    cid = (await client.post(f'/v1/learning/sessions/{state["id"]}/conversation')).json()['conversation_id']
+    response = await client.post(f'/v1/conversations/{cid}/runs', json={'message':'힌트를 주세요.', 'audience_mode':'student'})
+    assert 'event: delta' in response.text and 'event: error' not in response.text
+    assert draft in provider.messages[-1][0]['content']
+    history = (await client.get(f'/v1/conversations/{cid}')).json()['messages']
+    assert next(item['content'] for item in history if item['role']=='user') == '힌트를 주세요.'

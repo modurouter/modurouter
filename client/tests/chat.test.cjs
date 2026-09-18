@@ -111,6 +111,6 @@ test('learning context and attachments preserve routing and the visible question
  await hook.send('내 문제로 복습','student',{attachments:files,attachment_ids:['file-1'],learning_context:'풀이를 확인하고 힌트를 주세요.',search_enabled:true});
  const body=JSON.parse(calls.find(c=>c.url.endsWith('/runs')).init.body);
  assert.equal(state.messages[0].content,'내 문제로 복습');assert.equal(state.messages[0].attachments[0].id,'file-1');
- assert.match(body.message,/자기주도 학습 코치/);assert.match(body.message,/풀이를 확인하고 힌트/);
+ assert.equal(body.message,'내 문제로 복습');assert.equal(body.audience_mode,'student');assert.match(body.learning_context,/풀이를 확인하고 힌트/);
  assert.deepEqual(body.attachment_ids,['file-1']);assert.equal(body.search_enabled,true);
 });

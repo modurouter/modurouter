@@ -8,17 +8,17 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, text, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import admin, auth, conversations, files, harness, speech
+from . import admin, auth, conversations, files, harness, learning, speech
 from .billing import ACTIVE, usage_summary
 from .config import get_settings
 from .db import Session, engine, get_db, utcnow
 from .document_formats import FORMATS
 from .errors import AppError
-from .models import Attachment, Conversation, Job, LoginSession, Message, Run, User
+from .models import Attachment, Conversation, Job, LearningSession, LoginSession, Message, Run, User
 from .router import RoutingPreference, candidates, model_catalog
 from .router import model_status as provider_model_status
 from .runtime_config import effective_settings
@@ -129,6 +129,7 @@ async def model_status(user: User = Depends(auth.current_user), db: AsyncSession
 async def delete_account(user: User = Depends(auth.current_user), db: AsyncSession = Depends(get_db)):
     await db.commit()
     await harness.admission_lock(db)
+    await db.scalar(select(User).where(User.id == user.id).with_for_update())
     rows = (await db.scalars(select(Conversation).where(Conversation.user_id == user.id,
         Conversation.deleted_at.is_(None)))).all()
     for row in rows:
@@ -140,6 +141,7 @@ async def delete_account(user: User = Depends(auth.current_user), db: AsyncSessi
         attachment.filename = "삭제한 파일"
         attachment.extraction_status = "expired"
         db.add(Job(type="delete_file", payload={"storage_key": attachment.storage_key}))
+    await db.execute(delete(LearningSession).where(LearningSession.user_id == user.id))
     user.google_sub = ("deleted:guest:" if user.google_sub.startswith("guest:") else "deleted:") + str(uuid4())
     user.email = ""
     user.display_name = "삭제한 계정"
@@ -157,3 +159,5 @@ app.include_router(files.router)
 app.include_router(harness.router)
 
 app.include_router(speech.router)
+
+app.include_router(learning.router)

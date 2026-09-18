@@ -51,9 +51,9 @@ function BrandRibbon() {
 
 const topicIcons = [MessageCircle, Smartphone, Coffee, ShieldCheck, FileText, Sprout];
 
-export function LearningHeader({ onChoose, disabled = false, view, onViewChange, mode, progress, onPracticeChoice, onRestart, onClear, ready, navigation }: {
+export function LearningHeader({ onChoose, disabled = false, view, onViewChange, mode, progress, onPracticeChoice, onRestart, onClear, ready, navigation, studentContent }: {
   onChoose: (prompt: string, label: string) => void; disabled?: boolean; view: LearningView; onViewChange: (view: LearningView) => void;
-  mode: Mode; progress: Practice; onPracticeChoice: (index: number) => void; onRestart: () => void; onClear: () => void; ready: boolean; navigation?: ReactNode;
+  mode: Mode; progress: Practice; onPracticeChoice: (index: number) => void; onRestart: () => void; onClear: () => void; ready: boolean; navigation?: ReactNode; studentContent?: ReactNode;
 }) {
   const { open, topicId } = view;
   const space = learningSpaces[mode];
@@ -76,6 +76,7 @@ export function LearningHeader({ onChoose, disabled = false, view, onViewChange,
       </Collapsible.Trigger>
     </header>
     <Collapsible.Panel className="learning-panel">
+      {mode === 'student' ? studentContent : <>
       <div className="learning-heading">
         {(topic || view.practice) && <button type="button" className="learning-back" onClick={() => setTopicId(null)} aria-label="전체 활동으로 돌아가기"><ArrowLeft size={16} />전체 활동</button>}
         <h1 ref={heading} tabIndex={-1}>{view.practice ? space.activity : topic ? topic.title : space.title}</h1>
@@ -96,7 +97,7 @@ export function LearningHeader({ onChoose, disabled = false, view, onViewChange,
             <div className="practice-choices">{step.choices.map((choice, index) => <button type="button" key={choice.label} onClick={() => onPracticeChoice(index)} disabled={disabled || !ready}>{choice.label}</button>)}</div>
             {progress.hint && <p className="practice-hint" role="status">{step.hint}</p>}
           </>}
-          {mode === 'student' && <button type="button" className="learning-back" disabled={disabled} onClick={() => choose(getLearningTopics('student')[0].activities[0].prompt, '내 문제로 복습')}>내 문제로 복습 <ArrowUpRight size={14} /></button>}
+
         </div>
       </motion.div> : <>
         {!topic && <button type="button" className="practice-feature glass" disabled={!ready} onClick={() => onViewChange({ open: true, topicId: null, practice: true })}>
@@ -113,6 +114,7 @@ export function LearningHeader({ onChoose, disabled = false, view, onViewChange,
       </>}
       {progress.completions > 0 && <div className="learning-record"><span>{space.activity} / {progress.completions}회 완료</span><button type="button" onClick={onClear}>기록 지우기</button></div>}
       {mode === 'senior' && <div className="learning-links"><a href="https://www.xn--2z1bw8k1pjz5ccumkb.kr/main.do" target="_blank" rel="noopener noreferrer">교육 찾기 <ArrowUpRight size={13} /></a><a href="https://www.lllcard.kr/" target="_blank" rel="noopener noreferrer">평생교육이용권 <ArrowUpRight size={13} /></a></div>}
+      </>}
     </Collapsible.Panel>
   </Collapsible.Root>;
 }

@@ -246,3 +246,18 @@ class RuntimeSettings(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     updated_by: Mapped[str | None] = mapped_column(String(36))
     updated_at: Mapped[datetime] = mapped_column(timestamp, default=utcnow)
+
+
+class LearningSession(Base):
+    __tablename__ = "learning_sessions"
+    __table_args__ = (UniqueConstraint("user_id", "task_id", name="uq_learning_user_task"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    task_id: Mapped[str] = mapped_column(String(64))
+    task_version: Mapped[int] = mapped_column(Integer, default=1)
+    conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id"), unique=True)
+    state: Mapped[dict] = mapped_column(JSON, default=dict)
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    last_request: Mapped[str | None] = mapped_column(String(64))
+    last_hash: Mapped[str | None] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(timestamp, default=utcnow)
