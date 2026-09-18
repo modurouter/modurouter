@@ -12,7 +12,7 @@ import { AnswerActivity } from './answer-activity';
 import { ModelSettings } from './model-settings';
 import { useSpeechOutput } from '@/lib/use-speech-output';
 import { storage, useChatWorkspace } from '@/lib/use-chat-workspace';
-import { attachmentErrorMessage, type Attachment } from '@/lib/api';
+import { attachmentErrorMessage, attachmentExtensions, type Attachment } from '@/lib/api';
 import { WorkspaceMenu } from './workspace-menu';
 import { Dialog } from '@base-ui/react/dialog';
 
@@ -25,12 +25,18 @@ export function Chat() {
   const recording = speech.recording;
   const output = useSpeechOutput();
   const workspace = useChatWorkspace();
-  const [search, setSearch] = useState(false);
+  const [search, setSearch] = useState<boolean | null>(null);
   const [preview, setPreview] = useState<Attachment | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const upload = useRef<HTMLInputElement>(null);
   const disabled = streaming || workspace.busy || recording || speech.processing;
-  useEffect(() => { setInput(storage.get('modurouter-draft') || ''); setDraftReady(true); }, []);
+  useEffect(() => {
+    setInput(storage.get('modurouter-draft') || '');
+    const savedSearch = storage.get('modurouter-search');
+    setSearch(savedSearch === 'true' ? true : savedSearch === 'false' ? false : null);
+    setDraftReady(true);
+  }, []);
+  useEffect(() => { if (draftReady) storage.set('modurouter-search', String(search)); }, [search,draftReady]);
   useEffect(() => { if (draftReady) storage.set('modurouter-draft', input); }, [input,draftReady]);
   const chatApi = useChatApi();
   const [requestError, setRequestError] = useState('');
@@ -122,7 +128,7 @@ export function Chat() {
         {(workspace.error || output.error) && <p className="request-error" role="alert">{workspace.error || output.error}</p>}
         {workspace.busy && <p className="workspace-status" role="status">대화와 자료를 확인하고 있어요.</p>}
         {!!workspace.attachments.length && <div className="chat-attachments" aria-label="첨부파일">{workspace.attachments.map(file=><div key={file.id}>
-          <button disabled={!file.preview} onClick={()=>setPreview(file)}>{file.filename}</button><span>{file.status === 'ready' ? '준비됨' : ['queued','pending'].includes(file.status) ? '읽는 중' : attachmentErrorMessage(file)}</span>
+          <button disabled={!file.preview} onClick={()=>setPreview(file)}>{file.filename}</button><span>{file.status === 'ready' ? file.truncated ? '일부 내용 준비됨' : '준비됨' : ['queued','pending'].includes(file.status) ? '읽는 중' : attachmentErrorMessage(file)}</span>
           <button aria-label={`${file.filename} 첨부 삭제`} disabled={disabled} onClick={()=>void workspace.removeAttachment(file)}><X size={16}/></button>
         </div>)}</div>}
         {requestError && <p className="request-error" role="alert">{requestError}</p>}
@@ -140,10 +146,9 @@ export function Chat() {
           <motion.button className={`microphone glass ${recording ? 'is-recording' : ''}`} whileHover={{ scale: 1.045 }} whileTap={{ scale: .94 }} disabled={!recording && (streaming || workspace.busy || speech.processing)} onClick={() => { output.stop(); if (recording) speech.stop(); else void speech.start(input); }} aria-label={recording ? '음성 입력 중지' : '음성 입력'} title="음성으로 입력하기 / 최대 10분" aria-pressed={recording}><GlassSurface radius={50} />{recording ? <Square size={21} strokeWidth={1.5} /> : <Mic size={27} strokeWidth={1.45} />}</motion.button>
         </div>
         <div className="composer-tools">
-          <input ref={upload} type="file" hidden multiple accept=".txt,.pdf,.hwp,.hwpx,.png,.jpg,.jpeg" onChange={event=>{void workspace.upload(event.target.files);event.target.value='';}}/>
+          <input ref={upload} type="file" hidden multiple accept={(workspace.config?.attachment_extensions || attachmentExtensions).join(',')} onChange={event=>{void workspace.upload(event.target.files);event.target.value='';}}/>
           <button disabled={disabled} onClick={()=>upload.current?.click()}><Paperclip size={16}/>파일 첨부</button>
-          <button disabled={disabled} aria-pressed={search} onClick={()=>setSearch(value=>!value)}><Globe size={16}/>웹 검색</button>
-          <span>음성 입력은 OpenAI로 전송됩니다. 최대 10분</span>
+          <label className="search-mode" title="자동 모드에서는 질문에 따라 웹 자료를 확인합니다."><Globe size={16} aria-hidden="true"/><select aria-label="웹 검색 모드" disabled={disabled} value={search === null ? 'auto' : search ? 'on' : 'off'} onChange={event=>setSearch(event.target.value === 'auto' ? null : event.target.value === 'on')}><option value="auto">웹 검색 자동</option><option value="on">웹 검색 항상</option><option value="off">웹 검색 끄기</option></select></label>
         </div>
         <div className="settings-row">
         <div className="mode-track glass" role="radiogroup" aria-label="대화 모드" ref={modeTrack} onPointerDown={(e) => { pointerStart.current = e.clientX; }} onPointerMove={(e) => { if (pointerStart.current !== null && Math.abs(e.clientX - pointerStart.current) > 6) { e.currentTarget.setPointerCapture(e.pointerId); selectFromPointer(e.clientX); } }} onPointerUp={() => { pointerStart.current = null; }} onPointerCancel={() => { pointerStart.current = null; }}>
@@ -151,11 +156,11 @@ export function Chat() {
           <motion.div initial={false} className="mode-indicator" animate={{ x: `${selected * 100}%` }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} />
           {modes.map((item, index) => <button key={item.id} type="button" role="radio" aria-checked={mode === item.id} tabIndex={mode === item.id ? 0 : -1} onClick={() => setMode(item.id)} onKeyDown={(e) => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = e.key === 'Home' ? 0 : e.key === 'End' ? 2 : (index + (e.key === 'ArrowRight' ? 1 : 2)) % 3; setMode(modes[next].id); (e.currentTarget.parentElement?.querySelectorAll('button')[next] as HTMLButtonElement)?.focus(); } }}>{item.label}</button>)}
         </div>
-        <ModelSettings needsTools={search || workspace.attachments.length > 0} />
+        <ModelSettings />
         </div>
       </div>
     </section>
-    <Dialog.Root open={!!preview} onOpenChange={open=>{if(!open)setPreview(null);}}><Dialog.Portal><Dialog.Backdrop className="confirm-backdrop"/><Dialog.Popup className="confirm-popup"><Dialog.Title>{preview?.filename}</Dialog.Title><Dialog.Description>첨부파일에서 읽은 내용입니다.</Dialog.Description><pre>{preview?.preview}</pre><Dialog.Close>닫기</Dialog.Close></Dialog.Popup></Dialog.Portal></Dialog.Root>
+    <Dialog.Root open={!!preview} onOpenChange={open=>{if(!open)setPreview(null);}}><Dialog.Portal><Dialog.Backdrop className="confirm-backdrop"/><Dialog.Popup className="confirm-popup"><Dialog.Title>{preview?.filename}</Dialog.Title><Dialog.Description>첨부파일에서 읽은 내용입니다. 스캔 PDF와 이미지의 글자는 자동으로 인식합니다.{preview?.truncated && ' 처리 한도로 일부 내용만 읽었습니다. 빠진 내용이 필요하면 파일을 나누어 첨부해 주세요.'}</Dialog.Description>{preview?.extraction_notes?.map(note=><p key={note}>{note}</p>)}<pre>{preview?.preview}</pre><Dialog.Close>닫기</Dialog.Close></Dialog.Popup></Dialog.Portal></Dialog.Root>
     <span className="sr-only" role="status">{streaming ? '응답을 작성하고 있습니다' : messages.at(-1)?.activity?.status === 'error' ? '응답 처리에 실패했습니다' : messages.at(-1)?.activity?.status === 'stopped' ? '응답이 중지되었습니다' : messages.length ? '응답이 완료되었습니다' : ''}</span>
   </main></MotionConfig>;
 }

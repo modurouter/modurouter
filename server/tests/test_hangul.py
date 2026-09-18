@@ -4,6 +4,7 @@ import sys
 
 import pytest
 from hangul_fixtures import compound, hwp, hwpx, paragraph, record
+from modurouter.document_formats import MAX_TEXT
 from modurouter.extract import extract
 from modurouter.hangul import HWP_MIME, HWPX_MIME, validate_container
 
@@ -26,8 +27,8 @@ def test_hwp_compression_distribution_nested_paragraphs_and_sections(tmp_path, f
 
 
 def test_hwp_extended_record_and_truncation(tmp_path):
-    result = extract(document(tmp_path, hwp([paragraph("한" * 21000)])), HWP_MIME)
-    assert result == {"text": "한" * 20000, "truncated": True}
+    result = extract(document(tmp_path, hwp([paragraph("한" * (MAX_TEXT + 1000))])), HWP_MIME)
+    assert result == {"text": "한" * MAX_TEXT, "truncated": True}
 
 
 def test_hwp_control_payload_is_not_decoded_as_text(tmp_path):

@@ -16,6 +16,7 @@ from . import admin, auth, conversations, files, harness, speech
 from .billing import ACTIVE, usage_summary
 from .config import get_settings
 from .db import Session, engine, get_db, utcnow
+from .document_formats import FORMATS
 from .errors import AppError
 from .models import Attachment, Conversation, Job, LoginSession, Message, Run, User
 from .router import RoutingPreference, candidates, model_catalog
@@ -103,7 +104,8 @@ async def ready(db: AsyncSession = Depends(get_db)):
 async def public_config(db: AsyncSession = Depends(get_db)):
     config = await effective_settings(db, settings)
     return {"google_login_available": settings.google_configured, "admin_login_available": settings.admin_configured, "max_attachment_bytes": settings.max_upload_bytes,
-            "max_attachments": 3, "stt_available": "openai" in config.configured_providers,
+            "max_attachments": 3, "attachment_extensions": sorted(FORMATS), "search_default": "auto",
+            "stt_available": "openai" in config.configured_providers,
             "stt_model": speech.MODEL, "stt_max_seconds": speech.MAX_SECONDS,
             "voice_notice": "녹음한 음성은 OpenAI로 전송되어 글로 변환됩니다. 한 번에 최대 10분입니다."}
 

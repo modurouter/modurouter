@@ -76,3 +76,31 @@ test('Korean TTS waits for voiceschanged before choosing the Korean voice',async
  const waiting=koreanVoice({getVoices:()=>voices,addEventListener:(_,fn)=>listener=fn,removeEventListener:()=>removed=true});
  voices=[ko];listener();assert.equal(await waiting,ko);assert.ok(removed);
 });
+
+for (const [label, options, expected] of [
+  ['default automatic', {}, null],
+  ['explicit automatic', {search_enabled:null}, null],
+  ['always', {search_enabled:true}, true],
+  ['off', {search_enabled:false}, false],
+]) {
+  test(`web lookup mode ${label} reaches the server without losing false or null`, async()=>{
+    const {hook,calls}=setup(url=>common(url)||Response.json(result()));
+    await hook.send('현재 소식','student',options);
+    assert.equal(JSON.parse(calls.find(c=>c.url.endsWith('/runs')).init.body).search_enabled,expected);
+  });
+}
+
+test('a text model without native tools can send document attachments and web lookup together',async()=>{
+  const {hook,calls,state}=setup(url=>common(url)||Response.json(result()),{
+    loaded:true,chosen:true,model:'upstage::text-model',effort:0,
+    models:[{provider:'upstage',model_id:'text-model',supports_tools:false,efforts:[]}],
+  });
+  await hook.send('첨부한 보고서와 최신 발표를 비교해 주세요','student',{
+    attachment_ids:['report-docx','scan-pdf'],search_enabled:true,
+  });
+  const body=JSON.parse(calls.find(c=>c.url.endsWith('/runs')).init.body);
+  assert.deepEqual(body.routing,{mode:'manual',provider:'upstage',model_id:'text-model'});
+  assert.deepEqual(body.attachment_ids,['report-docx','scan-pdf']);
+  assert.equal(body.search_enabled,true);
+  assert.equal(state.messages[1].activity.status,'complete');
+});

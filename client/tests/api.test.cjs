@@ -119,6 +119,7 @@ test('attachment failures explain recovery for every extractor error', () => {
   for (const code of ['PDF_ENCRYPTED', 'PDF_PAGE_LIMIT', 'NO_EXTRACTABLE_TEXT', 'FILE_ENCODING_INVALID',
     'IMAGE_PIXEL_LIMIT', 'OCR_LOW_CONFIDENCE', 'OCR_FAILED', 'OCR_TIMEOUT', 'EXTRACTION_TIMEOUT',
     'WORKER_INTERRUPTED', 'FILE_UNSUPPORTED', 'UPLOAD_FAILED', 'EXTRACTION_FAILED',
+    'OFFICE_INVALID', 'OFFICE_ENCRYPTED', 'OFFICE_SIZE_LIMIT', 'FILE_TYPE_MISMATCH',
     'HWP_ENCRYPTED', 'HWP_PROTECTED', 'HWP_INVALID', 'HWP_VERSION_UNSUPPORTED', 'HWP_SIZE_LIMIT']) {
     assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: code}), /첨부/);
   }
@@ -127,5 +128,9 @@ test('attachment failures explain recovery for every extractor error', () => {
   assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: 'HWP_VERSION_UNSUPPORTED'}), /HWPX/);
   assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: 'HWP_INVALID'}), /손상/);
   assert.match(exportsObject.runErrorMessage('ATTACHMENT_EXPIRED'), /원문.*다시 첨부/);
+  assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: 'OFFICE_ENCRYPTED'}), /암호를 해제/);
+  assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: 'OFFICE_INVALID'}), /원본 앱에서 다시 저장/);
+  assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: 'OFFICE_SIZE_LIMIT'}), /나누어/);
+  assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: 'NO_EXTRACTABLE_TEXT'}), /스캔 PDF.*자동/);
   assert.equal(exportsObject.attachmentErrorMessage({status: 'ready'}), null);
 });

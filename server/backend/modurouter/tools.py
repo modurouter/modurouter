@@ -1,15 +1,27 @@
 import asyncio
 import ipaddress
 import socket
+import tempfile
+from pathlib import Path
 from typing import Annotated, Literal
-from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlsplit
 
 import aiohttp
 from aiohttp.abc import AbstractResolver
 from bs4 import BeautifulSoup
+from charset_normalizer import from_bytes
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
+from .document_formats import (
+    DOCUMENT_MIMES,
+    FORMATS,
+    MAX_DOCUMENT_BYTES,
+    MAX_TEXT,
+    TEXT_MIMES,
+    extraction_notes,
+)
 from .errors import AppError
+from .extraction import extract_file
 
 
 class StrictModel(BaseModel):
@@ -110,7 +122,7 @@ class PublicResolver(AbstractResolver):
         pass
 
 
-async def fetch_public(url: str, max_bytes: int = 2 * 1024 * 1024) -> tuple[str, bytes, str]:
+async def fetch_public(url: str, max_bytes: int = 2 * 1024 * 1024, *, documents: bool = False) -> tuple[str, bytes, str]:
     connector = aiohttp.TCPConnector(resolver=PublicResolver(), use_dns_cache=False)
     try:
         async with asyncio.timeout(10), aiohttp.ClientSession(connector=connector,
@@ -133,14 +145,18 @@ async def fetch_public(url: str, max_bytes: int = 2 * 1024 * 1024) -> tuple[str,
                     if response.status != 200:
                         raise AppError("PAGE_UNAVAILABLE", "페이지를 읽을 수 없습니다.", 503, True)
                     mime = response.content_type
-                    if mime not in ("text/html", "text/plain", "application/xhtml+xml"):
-                        raise AppError("PAGE_UNSUPPORTED", "텍스트 또는 HTML 페이지를 입력해 주세요.")
-                    if response.content_length and response.content_length > max_bytes:
+                    if documents and mime in ("application/octet-stream", "application/zip", "application/x-zip-compressed"):
+                        mime = FORMATS.get(Path(unquote(urlsplit(url).path)).suffix.lower(), mime)
+                    is_document = documents and mime in DOCUMENT_MIMES
+                    if not (mime.startswith("text/") or mime in TEXT_MIMES or mime == "application/xhtml+xml" or is_document):
+                        raise AppError("PAGE_UNSUPPORTED", "웹페이지나 지원하는 문서 또는 이미지 주소를 입력해 주세요.")
+                    limit = MAX_DOCUMENT_BYTES if is_document else max_bytes
+                    if response.content_length and response.content_length > limit:
                         raise AppError("PAGE_TOO_LARGE", "페이지 크기 제한을 초과했습니다.")
                     data = bytearray()
                     async for chunk in response.content.iter_chunked(16384):
                         data.extend(chunk)
-                        if len(data) > max_bytes:
+                        if len(data) > limit:
                             raise AppError("PAGE_TOO_LARGE", "페이지 크기 제한을 초과했습니다.")
                     return url, bytes(data), mime
     except (TimeoutError, aiohttp.ClientError, OSError):
@@ -149,43 +165,62 @@ async def fetch_public(url: str, max_bytes: int = 2 * 1024 * 1024) -> tuple[str,
 
 
 async def read_url(url: str) -> dict:
-    final_url, data, mime = await fetch_public(url)
+    final_url, data, mime = await fetch_public(url, documents=True)
+    if mime in DOCUMENT_MIMES:
+        with tempfile.TemporaryDirectory(prefix="modurouter-web-document-") as directory:
+            path = Path(directory) / "document"
+            await asyncio.to_thread(path.write_bytes, data)
+            result = await extract_file(path, mime)
+        if result.get("error"):
+            raise AppError(result["error"], "링크의 문서를 읽지 못했습니다. 파일 상태를 확인하거나 직접 첨부해 주세요.")
+        return {"title": unquote(urlsplit(final_url).path.rsplit("/", 1)[-1])[:200] or final_url,
+                "url": final_url, "text": result["text"], "scope": "page",
+                "format": mime, "truncated": result.get("truncated", False), "limitations": extraction_notes(mime)}
     soup = BeautifulSoup(data, "html.parser")
     title = soup.title.get_text(" ", strip=True) if soup.title else final_url
     for node in soup(["script", "style", "nav", "header", "footer", "form", "noscript"]):
         node.decompose()
-    content = soup.get_text(" ", strip=True) if mime != "text/plain" else data.decode("utf-8", errors="replace")
+    if mime in ("text/html", "application/xhtml+xml"):
+        body = soup.find("main") or soup.find("article") or soup
+        content = body.get_text("\n", strip=True)
+    else:
+        decoded = from_bytes(data).best()
+        content = str(decoded) if decoded is not None else data.decode("utf-8", errors="replace")
     if not content:
         raise AppError("PAGE_EMPTY", "페이지에서 읽을 수 있는 본문을 찾지 못했습니다.")
-    return {"title": title[:200], "url": final_url, "text": content[:20000],
-            "scope": "page", "truncated": len(content) > 20000}
+    return {"title": title[:200], "url": final_url, "text": content[:MAX_TEXT],
+            "scope": "page", "truncated": len(content) > MAX_TEXT}
 
 
 async def search_web(query: str) -> list[dict]:
-    try:
-        _, data, _ = await fetch_public("https://html.duckduckgo.com/html/?" + urlencode({"q": query}))
-        soup = BeautifulSoup(data, "html.parser")
-        result = []
-        for row in soup.select(".result"):
-            link = row.select_one(".result__a")
-            snippet = row.select_one(".result__snippet")
-            if not link or not link.get("href"):
-                continue
-            url = urljoin("https://duckduckgo.com", link["href"])
-            parsed = urlsplit(url)
-            if parsed.hostname and parsed.hostname.endswith("duckduckgo.com"):
-                url = parse_qs(parsed.query).get("uddg", [url])[0]
-            try:
-                validate_url(url)
-            except AppError:
-                continue
-            result.append({"title": link.get_text(" ", strip=True)[:200], "url": url,
-                           "text": snippet.get_text(" ", strip=True)[:2000] if snippet else "",
-                           "scope": "search_snippet", "truncated": False})
-            if len(result) == 5:
-                break
-        if result:
-            return result
-    except AppError:
-        pass
+    for endpoint in ("https://html.duckduckgo.com/html/", "https://lite.duckduckgo.com/lite/"):
+        try:
+            _, data, _ = await fetch_public(endpoint + "?" + urlencode({"q": query}))
+            soup = BeautifulSoup(data, "html.parser")
+            result, seen = [], set()
+            for link in soup.select(".result__a, .result-link"):
+                if not link.get("href"):
+                    continue
+                row = link.find_parent(class_="result")
+                snippet = row.select_one(".result__snippet") if row else None
+                url = urljoin("https://duckduckgo.com", link["href"])
+                parsed = urlsplit(url)
+                if parsed.hostname == "duckduckgo.com" or (parsed.hostname or "").endswith(".duckduckgo.com"):
+                    url = parse_qs(parsed.query).get("uddg", [url])[0]
+                try:
+                    validate_url(url)
+                except AppError:
+                    continue
+                if url in seen:
+                    continue
+                seen.add(url)
+                result.append({"title": link.get_text(" ", strip=True)[:200], "url": url,
+                               "text": snippet.get_text(" ", strip=True)[:2000] if snippet else "",
+                               "scope": "search_snippet", "truncated": False})
+                if len(result) == 5:
+                    break
+            if result:
+                return result
+        except AppError:
+            continue
     raise AppError("SEARCH_UNAVAILABLE", "웹 검색을 사용할 수 없습니다. 페이지 주소를 직접 입력하거나 검색을 꺼 주세요.", 503, True)

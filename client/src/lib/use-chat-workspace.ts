@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, ensureSession, fetchApi, readSavedAttachments, restoreAttachments, runErrorMessage, type Attachment, type Conversation, type Message as StoredMessage, type Run, type Usage, type User } from './api';
+import { api, attachmentExtensions, ensureSession, fetchApi, readSavedAttachments, restoreAttachments, runErrorMessage, type Attachment, type Conversation, type Message as StoredMessage, type Run, type Usage, type User } from './api';
 import { useChatStore, type Message } from './chat-store';
 import { useModelSettings } from './model-settings';
 
@@ -10,7 +10,7 @@ export const storage = {
   remove(key: string) { try { sessionStorage.removeItem(key); } catch {} },
 };
 const active = (run: Run) => ['accepted','preparing','model','tool','streaming'].includes(run.status);
-type Config = { google_login_available: boolean; admin_login_available: boolean; voice_notice: string; max_attachment_bytes: number; max_attachments: number };
+type Config = { google_login_available: boolean; admin_login_available: boolean; voice_notice: string; max_attachment_bytes: number; max_attachments: number; attachment_extensions?: string[] };
 
 export function useChatWorkspace() {
   const { conversationId, streaming } = useChatStore();
@@ -121,8 +121,12 @@ export function useChatWorkspace() {
   async function upload(files: FileList | null) {
     if (!files?.length || !user || lock.current || streaming) return;
     const selected = Array.from(files);
-    if (selected.length + attachments.length > (config?.max_attachments || 3)) { setError('파일은 한 번에 3개까지 첨부할 수 있습니다.'); return; }
-    if (selected.some(file => !file.size || file.size > (config?.max_attachment_bytes || 10*1024*1024) || !/\.(txt|pdf|hwp|hwpx|png|jpe?g)$/i.test(file.name))) { setError('10MB 이하의 HWP/HWPX 문서나 TXT/PDF 파일, PNG/JPG 이미지를 첨부해 주세요.'); return; }
+    const maxFiles = config?.max_attachments || 3;
+    const maxBytes = config?.max_attachment_bytes || 10*1024*1024;
+    const extensions = config?.attachment_extensions || attachmentExtensions;
+    if (selected.length + attachments.length > maxFiles) { setError(`파일은 한 번에 ${maxFiles}개까지 첨부할 수 있습니다.`); return; }
+    if (selected.some(file => !file.size || file.size > maxBytes)) { setError(`내용이 있는 ${maxBytes / (1024*1024)}MB 이하의 파일을 첨부해 주세요.`); return; }
+    if (selected.some(file => !extensions.includes(file.name.slice(file.name.lastIndexOf('.')).toLowerCase()))) { setError('PDF나 한글 문서, Word와 Excel, PowerPoint 문서 또는 ODT/RTF를 첨부할 수 있습니다. Markdown과 HTML, CSV/TSV 등의 텍스트 파일 및 PNG/JPG 이미지도 지원합니다.'); return; }
     lock.current = true; setBusy(true); setError('');
     try {
       let id = useChatStore.getState().conversationId;

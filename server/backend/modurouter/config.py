@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     max_output_tokens: int = Field(default=1024, ge=1, le=8192)
     max_input_tokens: int = Field(default=16384, ge=512, le=32768)
     max_model_calls_per_run: int = Field(default=3, ge=1, le=3)
-    max_tool_calls_per_run: int = Field(default=2, ge=1, le=2)
+    max_tool_calls_per_run: int = Field(default=6, ge=1, le=8)
     run_timeout_seconds: int = Field(default=120, ge=10, le=120)
     platform_concurrency: int = Field(default=5, ge=1, le=5)
     price_refresh_seconds: int = 600

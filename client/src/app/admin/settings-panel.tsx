@@ -24,7 +24,7 @@ const limits:{key:NumericKey;label:string;min:number;max:number;step?:string}[] 
   {key:'max_input_tokens',label:'요청당 입력 토큰 한도',min:512,max:32768},
   {key:'max_output_tokens',label:'호출당 최대 출력 토큰',min:1,max:8192},
   {key:'max_model_calls_per_run',label:'답변당 최대 모델 호출 수',min:1,max:3},
-  {key:'max_tool_calls_per_run',label:'답변당 최대 도구 호출 수',min:1,max:2},
+  {key:'max_tool_calls_per_run',label:'답변당 최대 도구 호출 수',min:1,max:8},
   {key:'run_timeout_seconds',label:'답변 제한 시간 / 초',min:10,max:120},
   {key:'platform_concurrency',label:'동시 답변 수',min:1,max:5},
   {key:'price_refresh_seconds',label:'가격 갱신 간격 / 초',min:30,max:86400},

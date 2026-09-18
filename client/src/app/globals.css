@@ -229,7 +229,9 @@ button,input,select,textarea {font:inherit}
 .account-summary p {margin:0}.account-summary a {color:inherit;text-decoration:underline}
 .account-delete {display:flex;align-items:center;justify-content:space-between}
 .composer-tools {display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px}
-.composer-tools button[aria-pressed=true] {background:#eceef3;color:var(--ink)}
+.search-mode {display:inline-flex;align-items:center;gap:6px;padding:8px;color:var(--muted)}
+.search-mode select {border:0;background:transparent;color:inherit;font:inherit;font-size:13px;max-width:150px}
+.search-mode select:focus-visible {outline:2px solid var(--ink);outline-offset:3px;border-radius:4px}
 .composer-tools>span {font-size:11px;color:var(--muted);margin-left:auto}
 .chat-attachments {max-height:150px;overflow:auto;font-size:12px;margin-bottom:12px}
 .chat-attachments>div {display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #e7e9ee}

@@ -45,11 +45,14 @@ async function loadSession(): Promise<User> {
 const runErrors: Record<string, string> = {
   SEARCH_UNAVAILABLE: '웹 검색을 사용할 수 없습니다. 검색을 끄거나 잠시 후 다시 시도해 주세요.',
   PAGE_UNAVAILABLE: '페이지를 읽을 수 없습니다. 주소를 확인하거나 내용을 파일로 첨부해 주세요.',
+  RETRIEVAL_TIMEOUT: '자료를 읽는 시간이 초과되었습니다. 링크 수를 줄이거나 파일을 직접 첨부해 주세요.',
+  PAGE_UNSUPPORTED: '지원하지 않는 링크 형식입니다. 웹페이지나 PDF, 한글, Office 문서 주소를 사용해 주세요.',
+  PAGE_TOO_LARGE: '링크의 자료가 너무 큽니다. 문서를 나누어 첨부해 주세요.',
   PROVIDER_UNAVAILABLE: '모델 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.',
   PROVIDER_ACCOUNT_ERROR: '모델 서비스의 계정 설정을 확인해야 합니다. 관리자에게 알려 주세요.',
   PRICE_DATA_STALE: '모델 가격을 갱신 중입니다. 잠시 후 다시 시도해 주세요.',
   MANUAL_SELECTION_DISABLED: '관리자가 직접 모델 선택을 비활성화했습니다. 다른 선택 방식을 사용해 주세요.',
-  SELECTED_MODEL_UNAVAILABLE: '선택한 모델을 현재 사용할 수 없습니다. 모델을 다시 선택하거나 입력 길이와 자료 처리 지원 여부를 확인해 주세요.',
+  SELECTED_MODEL_UNAVAILABLE: '선택한 모델을 현재 사용할 수 없습니다. 모델을 다시 선택하거나 입력 길이를 확인해 주세요.',
   NO_FREE_MODEL: '현재 요청을 처리할 무료 모델이 없습니다. 유료 모델로 자동 전환하지 않았습니다.',
   NO_ELIGIBLE_MODEL: '입력 길이와 가격 조건에 맞는 모델이 없습니다. 자료를 줄여 다시 시도해 주세요.',
   INPUT_TOO_LONG: '입력 한도를 초과했습니다. 질문이나 자료를 줄여 주세요.',
@@ -75,7 +78,8 @@ export type Message = {id:string; run_id:string; role:string; content:string; st
 export type Conversation = {id:string; title:string; updated_at:string};
 export type User = {id:string; display_name:string; email:string; csrf_token:string; guest?:boolean; admin?:boolean};
 export type Usage = {remaining_requests:number|null; request_limit:number|null; spent_usd:string; reserved_usd:string; limit_usd:string; remaining_usd:string; resets_at:string};
-export type Attachment = {id:string; filename:string; status:string; preview?:string; truncated:boolean; error_code?:string; expires_at:string};
+export const attachmentExtensions = ['.txt', '.md', '.markdown', '.html', '.htm', '.doc', '.xls', '.ppt', '.odt', '.rtf', '.csv', '.tsv', '.json', '.xml', '.pdf', '.hwp', '.hwpx', '.docx', '.xlsx', '.pptx', '.png', '.jpg', '.jpeg'];
+export type Attachment = {id:string; filename:string; status:string; preview?:string; extraction_notes?:string[]; truncated:boolean; error_code?:string; expires_at:string};
 
 export async function consumeEvents(response: Response, receive: (kind:string, data:Record<string, unknown>) => void) {
   if (!response.body) throw new Error('응답 스트림을 읽을 수 없습니다.');
@@ -101,22 +105,36 @@ export async function consumeEvents(response: Response, receive: (kind:string, d
 }
 
 const attachmentErrors: Record<string, string> = {
+  DOCUMENT_INVALID: '문서가 손상되었습니다. 원본 프로그램에서 다시 저장해 첨부해 주세요.',
+  DOCUMENT_ENCRYPTED: '암호화된 문서입니다. 암호를 해제한 파일을 다시 첨부해 주세요.',
+  DOCUMENT_SIZE_LIMIT: '문서의 내부 데이터가 너무 큽니다. 파일을 나누어 첨부해 주세요.',
+  DOCUMENT_VERSION_UNSUPPORTED: '이 버전은 지원하지 않습니다. 최신 Office 형식으로 저장해 첨부해 주세요.',
+  LEGACY_CONVERTER_UNAVAILABLE: '문서 변환기를 사용할 수 없습니다. DOCX, XLSX 또는 PPTX로 저장해 첨부해 주세요.',
+  LEGACY_CONVERSION_FAILED: '문서를 변환하지 못했습니다. 원본 프로그램에서 최신 형식으로 다시 저장해 첨부해 주세요.',
+  LEGACY_CONVERSION_TIMEOUT: '문서 변환 시간이 초과되었습니다. 파일을 나누거나 최신 Office 형식으로 저장해 첨부해 주세요.',
+  TEXT_DOCUMENT_INVALID: '텍스트나 표 형식이 잘못되었습니다. 원본 프로그램에서 다시 저장해 첨부해 주세요.',
+  TEXT_DOCUMENT_LIMIT: '텍스트 문서의 내부 구조가 너무 복잡합니다. 파일을 나누거나 TXT로 저장해 첨부해 주세요.',
+
   HWP_ENCRYPTED: '암호화된 한글 문서입니다. 암호를 해제한 파일을 다시 첨부해 주세요.',
   HWP_PROTECTED: '보안이 설정된 한글 문서입니다. 보안을 해제한 파일을 다시 첨부해 주세요.',
   HWP_INVALID: '한글 문서가 손상되었거나 내부 구조를 읽을 수 없습니다. 한글에서 다시 저장한 파일을 첨부해 주세요.',
   HWP_VERSION_UNSUPPORTED: '이 버전의 한글 문서는 읽을 수 없습니다. 최신 한글에서 HWPX로 저장해 다시 첨부해 주세요.',
   HWP_SIZE_LIMIT: '한글 문서의 내부 데이터가 너무 큽니다. 파일을 나누어 다시 첨부해 주세요.',
+  OFFICE_INVALID: 'Office 문서가 손상되었거나 내부 구조를 읽을 수 없습니다. 원본 앱에서 다시 저장해 첨부해 주세요.',
+  OFFICE_ENCRYPTED: '암호화된 Office 문서입니다. 암호를 해제한 파일을 다시 첨부해 주세요.',
+  OFFICE_SIZE_LIMIT: 'Office 문서의 내부 데이터가 너무 큽니다. 시트나 슬라이드를 나누어 다시 첨부해 주세요.',
+  FILE_TYPE_MISMATCH: '파일의 실제 형식과 확장자가 다릅니다. 원본 앱에서 지원 형식으로 저장해 다시 첨부해 주세요.',
   PDF_ENCRYPTED: '암호화된 PDF는 읽을 수 없습니다. 암호를 해제한 파일을 다시 첨부해 주세요.',
   PDF_PAGE_LIMIT: 'PDF는 20쪽까지 읽을 수 있습니다. 파일을 나누어 다시 첨부해 주세요.',
-  NO_EXTRACTABLE_TEXT: '읽을 수 있는 텍스트가 없습니다. 이미지로만 된 문서는 페이지를 PNG/JPG로 저장하거나 내용을 TXT로 첨부해 주세요.',
+  NO_EXTRACTABLE_TEXT: '문서에서 읽을 수 있는 글자를 찾지 못했습니다. 스캔 PDF는 자동으로 글자를 인식하므로 더 선명한 원본이나 텍스트 파일을 첨부해 주세요.',
   FILE_ENCODING_INVALID: '텍스트 인코딩을 읽을 수 없습니다. UTF-8 형식의 TXT로 저장해 다시 첨부해 주세요.',
   IMAGE_PIXEL_LIMIT: '이미지가 너무 큽니다. 2천만 픽셀 이하로 줄여 다시 첨부해 주세요.',
-  OCR_LOW_CONFIDENCE: '이미지의 글자를 정확히 읽지 못했습니다. 원본을 확인하고 선명한 이미지나 TXT로 다시 첨부해 주세요.',
-  OCR_FAILED: '이미지의 글자를 읽지 못했습니다. 선명한 이미지나 TXT로 다시 첨부해 주세요.',
-  OCR_TIMEOUT: '이미지를 읽는 시간이 초과되었습니다. 크기를 줄이거나 잠시 후 다시 첨부해 주세요.',
+  OCR_LOW_CONFIDENCE: '이미지나 스캔 PDF의 글자를 정확히 읽지 못했습니다. 원본을 확인하고 선명한 이미지나 TXT로 다시 첨부해 주세요.',
+  OCR_FAILED: '이미지나 스캔 PDF의 글자를 읽지 못했습니다. 선명한 이미지나 TXT로 다시 첨부해 주세요.',
+  OCR_TIMEOUT: '이미지나 스캔 PDF를 읽는 시간이 초과되었습니다. 크기를 줄이거나 잠시 후 다시 첨부해 주세요.',
   EXTRACTION_TIMEOUT: '파일을 읽는 시간이 초과되었습니다. 파일을 나누거나 잠시 후 다시 첨부해 주세요.',
   WORKER_INTERRUPTED: '파일 처리 중 연결이 중단되었습니다. 파일을 삭제한 뒤 다시 첨부해 주세요.',
-  FILE_UNSUPPORTED: '지원하지 않는 파일입니다. HWP/HWPX 문서나 TXT/PDF 파일, PNG/JPG 이미지를 다시 첨부해 주세요.',
+  FILE_UNSUPPORTED: '지원하지 않는 파일입니다. PDF나 한글 문서, Word와 Excel, PowerPoint 문서 또는 ODT/RTF를 첨부할 수 있습니다. Markdown과 HTML, CSV/TSV 등의 텍스트 파일 및 PNG/JPG 이미지도 지원합니다.',
   UPLOAD_FAILED: '파일 업로드에 실패했습니다. 인터넷 연결을 확인한 뒤 다시 첨부해 주세요.',
   ATTACHMENT_RESTORE_FAILED: '첨부 상태를 확인하지 못했습니다. 연결을 확인하고 대화를 다시 열거나 파일을 다시 첨부해 주세요.',
 };

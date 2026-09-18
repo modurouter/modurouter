@@ -10,11 +10,11 @@ import { motion } from 'motion/react';
 import { GlassSurface } from './glass-surface';
 import { effortOptions, modelKey, useModelSettings } from '@/lib/model-settings';
 
-export function ModelSettings({needsTools = false}: {needsTools?: boolean}) {
+export function ModelSettings() {
   const { model, models, effort, setModel, setEffort, load, loading, error, loaded, allowManual } = useModelSettings();
   const [query, setQuery] = useState('');
   const selected = models.find(option => modelKey(option) === model);
-  const modelOptions = [{ id: 'auto', name: '자동 선택', description: '관리자 기준으로 선택', supportsTools:true }, { id: 'free', name: '무료 모델만', description: '유료 모델로 전환하지 않음', supportsTools:true }, ...(allowManual ? models.map(option => ({ id: modelKey(option), name: option.name, supportsTools:option.supports_tools, description: `${option.provider} / ${option.is_free ? '무료' : `입력 $${Number(option.input_per_m)} / 출력 $${Number(option.output_per_m)} (1M 토큰)`}` })) : [])];
+  const modelOptions = [{ id: 'auto', name: '자동 선택', description: '관리자 기준으로 선택' }, { id: 'free', name: '무료 모델만', description: '유료 모델로 전환하지 않음' }, ...(allowManual ? models.map(option => ({ id: modelKey(option), name: option.name, description: `${option.provider} / ${option.is_free ? '무료' : `입력 $${Number(option.input_per_m)} / 출력 $${Number(option.output_per_m)} (1M 토큰)`}` })) : [])];
   const supported = ['auto', 'free'].includes(model) ? [...new Set(models.filter(option => model === 'free' ? option.is_free : option.auto_eligible).flatMap(option => option.efforts || []))] : selected?.efforts || [];
   const adjustable = loaded && supported.length > 1;
   const spring = { type: 'spring' as const, stiffness: 420, damping: 34 };
@@ -37,12 +37,11 @@ export function ModelSettings({needsTools = false}: {needsTools?: boolean}) {
               <h3 id="model-list-label" className="sr-only">모델</h3>
               <input className="model-search" type="search" aria-label="모델 검색" placeholder="모델 검색" value={query} onChange={event => setQuery(event.target.value)} />
               <RadioGroup value={model} onValueChange={setModel} className="model-options" aria-labelledby="model-list-label">
-                {modelOptions.filter(option => ['auto','free'].includes(option.id) || `${option.name} ${option.description}`.toLowerCase().includes(query.toLowerCase())).map((option) => <Radio.Root key={option.id} value={option.id} disabled={needsTools && !option.supportsTools} className="model-option">
-                  <span className="model-option-copy"><span>{option.name}</span><small>{option.description}{needsTools && !option.supportsTools ? ' / 자료 처리 미검증' : ''}</small></span>
+                {modelOptions.filter(option => ['auto','free'].includes(option.id) || `${option.name} ${option.description}`.toLowerCase().includes(query.toLowerCase())).map((option) => <Radio.Root key={option.id} value={option.id} className="model-option">
+                  <span className="model-option-copy"><span>{option.name}</span><small>{option.description}</small></span>
                 </Radio.Root>)}
               </RadioGroup>
             </section>
-            {needsTools && selected && !selected.supports_tools && <p className="settings-api-note" role="alert">이 모델은 자료 처리 검증 전입니다. 지원 모델을 선택하거나 웹 검색과 첨부를 꺼 주세요.</p>}
             {loading && <p className="settings-api-note" role="status">모델 목록을 불러오는 중…</p>}
             {error && <p className="settings-api-note" role="status">{error} <button onClick={() => void load()}>다시 시도</button></p>}
             <Slider.Root disabled={!adjustable} min={0} max={1} step={1} largeStep={1} value={effort} onValueChange={setEffort} className="effort-slider" thumbAlignment="edge">

@@ -9,21 +9,24 @@ import tempfile
 import time
 from pathlib import Path
 
-from charset_normalizer import from_bytes
 from PIL import Image
 from pypdf import PdfReader
 
+from .document_formats import LEGACY_FORMATS, MAX_TEXT, OFFICE_PARTS, TEXT_FORMATS
 from .hangul import ERRORS as HANGUL_ERRORS
 from .hangul import HWP_MIME, HWPX_MIME, hangul_text
+from .legacy_office import ERRORS as LEGACY_ERRORS
+from .legacy_office import legacy_text
+from .office import ERRORS as OFFICE_ERRORS
+from .office import office_text
+from .text_documents import text_document
 
-MAX_TEXT = 20000
 
-
-def image_text(path: Path) -> str:
+def image_text(path: Path, *, deadline: float | None = None) -> str:
     # Compare automatic layout with a text block. Keep automatic column ordering
     # unless the block pass recovers substantially more confident characters.
     # https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html
-    deadline = time.monotonic() + 20
+    deadline = min(deadline or float("inf"), time.monotonic() + 20)
     candidates = []
     with tempfile.TemporaryDirectory(prefix="modurouter-ocr-") as directory:
         for mode in (3, 6):
@@ -52,24 +55,108 @@ def image_text(path: Path) -> str:
     return text
 
 
+def pdf_text(path: Path) -> tuple[str, bool]:
+    import pypdfium2 as pdfium
+
+    reader = PdfReader(path, strict=False)
+    if reader.is_encrypted:
+        raise ValueError("PDF_ENCRYPTED")
+    if len(reader.pages) > 20:
+        raise ValueError("PDF_PAGE_LIMIT")
+    deadline = time.monotonic() + 60
+    parts, missing, failures, size = [], [], [], 0
+    rendered = None
+    try:
+        for index, page in enumerate(reader.pages):
+            try:
+                text = page.extract_text() or ""
+            except Exception:
+                text = ""
+            # A mixed page may have a substantial text header above a scanned body.
+            # Inspect displayed image area rather than OCRing every decorative logo.
+            has_scan = False
+            try:
+                if rendered is None:
+                    rendered = pdfium.PdfDocument(path)
+                pdf_page = rendered[index]
+                try:
+                    width, height = pdf_page.get_size()
+                    for obj in pdf_page.get_objects(filter=[pdfium.raw.FPDF_PAGEOBJ_IMAGE]):
+                        left, bottom, right, top = obj.get_bounds()
+                        if (right - left) * (top - bottom) >= width * height * 0.2:
+                            has_scan = True
+                            break
+                finally:
+                    pdf_page.close()
+            except pdfium.PdfiumError:
+                pass
+            if has_scan or not text.strip():
+                try:
+                    if time.monotonic() >= deadline:
+                        raise ValueError("OCR_TIMEOUT")
+                    if rendered is None:
+                        rendered = pdfium.PdfDocument(path)
+                    with tempfile.TemporaryDirectory(prefix="modurouter-pdf-") as directory:
+                        pdf_page = rendered[index]
+                        try:
+                            width, height = pdf_page.get_size()
+                            if width <= 0 or height <= 0:
+                                raise ValueError("EXTRACTION_FAILED")
+                            scale = min(2.5, (8_000_000 / (width * height)) ** 0.5)
+                            bitmap = pdf_page.render(scale=scale)
+                            try:
+                                image = bitmap.to_pil()
+                                image_path = Path(directory) / "page.png"
+                                image.save(image_path)
+                                image.close()
+                            finally:
+                                bitmap.close()
+                        finally:
+                            pdf_page.close()
+                        recovered = image_text(image_path, deadline=deadline)
+                        if len(recovered.strip()) > len(text.strip()) or has_scan:
+                            # Retain native text when OCR missed a digital header.
+                            native = "".join(text.split())
+                            if native and native not in "".join(recovered.split()):
+                                text = text.strip() + "\n[OCR 텍스트]\n" + recovered
+                            else:
+                                text = recovered
+                except (ValueError, OSError, subprocess.TimeoutExpired, pdfium.PdfiumError) as exc:
+                    # Preserve readable pages and explicitly mark incomplete extraction.
+                    if str(exc) != "NO_EXTRACTABLE_TEXT":
+                        missing.append(index + 1)
+                        failures.append("OCR_TIMEOUT" if isinstance(exc, subprocess.TimeoutExpired) else
+                                        "OCR_FAILED" if isinstance(exc, OSError) else str(exc))
+            if text.strip():
+                parts.append(f"[페이지 {index + 1}]\n{text}")
+                size += len(parts[-1]) + 1
+            if size > MAX_TEXT:
+                if index + 1 < len(reader.pages):
+                    missing.extend(range(index + 2, len(reader.pages) + 1))
+                break
+    finally:
+        if rendered is not None:
+            rendered.close()
+    if not parts:
+        code = failures[0] if failures else "NO_EXTRACTABLE_TEXT"
+        raise ValueError(code if code in {"OCR_FAILED", "OCR_LOW_CONFIDENCE", "OCR_TIMEOUT", "NO_EXTRACTABLE_TEXT"}
+                         else "EXTRACTION_FAILED")
+    warning = f"[일부 페이지의 OCR 또는 추출을 완료하지 못했습니다: {', '.join(map(str, missing))}]\n" if missing else ""
+    return warning + "\n\n".join(parts), bool(missing)
+
+
 def extract(path: Path, mime: str):
-    if mime == "text/plain":
-        data = path.read_bytes()
-        if b"\0" in data:
-            raise ValueError("FILE_ENCODING_INVALID")
-        decoded = from_bytes(data).best()
-        if decoded is None or decoded.chaos > 0.2:
-            raise ValueError("FILE_ENCODING_INVALID")
-        text = str(decoded)
+    incomplete = False
+    if mime in TEXT_FORMATS.values() or mime == "application/xhtml+xml":
+        text = text_document(path, mime)
+    elif mime in LEGACY_FORMATS.values():
+        text = legacy_text(path, mime)
     elif mime in (HWP_MIME, HWPX_MIME):
         text = hangul_text(path, mime)
+    elif mime in OFFICE_PARTS:
+        text = office_text(path, mime)
     elif mime == "application/pdf":
-        reader = PdfReader(path, strict=False)
-        if reader.is_encrypted:
-            raise ValueError("PDF_ENCRYPTED")
-        if len(reader.pages) > 20:
-            raise ValueError("PDF_PAGE_LIMIT")
-        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        text, incomplete = pdf_text(path)
     elif mime in ("image/png", "image/jpeg"):
         Image.MAX_IMAGE_PIXELS = 20_000_000
         with Image.open(path) as image:
@@ -81,13 +168,14 @@ def extract(path: Path, mime: str):
         raise ValueError("FILE_UNSUPPORTED")
     if not text.strip():
         raise ValueError("NO_EXTRACTABLE_TEXT")
-    return {"text": text[:MAX_TEXT], "truncated": len(text) > MAX_TEXT}
+    return {"text": text[:MAX_TEXT], "truncated": incomplete or len(text) > MAX_TEXT}
 
 
 def main():
-    resource.setrlimit(resource.RLIMIT_CPU, (25, 25))
+    resource.setrlimit(resource.RLIMIT_CPU, (65, 65))
     if sys.platform == "linux":
-        resource.setrlimit(resource.RLIMIT_AS, (512 * 1024**2, 512 * 1024**2))
+        memory = (2048 if sys.argv[2] in LEGACY_FORMATS.values() else 512) * 1024**2
+        resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
     resource.setrlimit(resource.RLIMIT_FSIZE, (12 * 1024**2, 12 * 1024**2))
     try:
         result = extract(Path(sys.argv[1]), sys.argv[2])
@@ -96,7 +184,8 @@ def main():
     except ValueError as exc:
         code = str(exc)
         allowed = {"FILE_ENCODING_INVALID", "PDF_ENCRYPTED", "PDF_PAGE_LIMIT", "IMAGE_PIXEL_LIMIT",
-                   "OCR_FAILED", "OCR_LOW_CONFIDENCE", "FILE_UNSUPPORTED", "NO_EXTRACTABLE_TEXT"} | HANGUL_ERRORS
+                   "OCR_FAILED", "OCR_LOW_CONFIDENCE", "OCR_TIMEOUT", "FILE_UNSUPPORTED", "FILE_TYPE_MISMATCH",
+                   "NO_EXTRACTABLE_TEXT", "FILE_TOO_LARGE", "TEXT_DOCUMENT_INVALID", "TEXT_DOCUMENT_LIMIT"} | HANGUL_ERRORS | OFFICE_ERRORS | LEGACY_ERRORS
         result = {"error": code if code in allowed else "EXTRACTION_FAILED"}
     except Exception:
         result = {"error": "EXTRACTION_FAILED"}

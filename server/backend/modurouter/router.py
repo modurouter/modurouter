@@ -170,6 +170,7 @@ class Candidate:
     reserved_usd: Decimal
     provider_code: str
     price_data: dict
+    context_length: int = 0
 
 
 async def candidates(db: AsyncSession, settings: Settings, input_tokens: int,
@@ -220,7 +221,7 @@ async def candidates(db: AsyncSession, settings: Settings, input_tokens: int,
         if snapshot.input_per_m == snapshot.output_per_m == 0:
             reservation = Decimal(0)
         result.append(Candidate(model.model_id, snapshot.input_per_m, snapshot.output_per_m,
-                                estimate, reservation, model.provider_code, snapshot.raw))
+                                estimate, reservation, model.provider_code, snapshot.raw, model.context_length))
     attempts = (await db.scalars(select(GenerationAttempt).where(
         GenerationAttempt.created_at > utcnow() - timedelta(hours=24)))).all()
     def reliability(candidate):

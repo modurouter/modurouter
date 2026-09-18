@@ -7,7 +7,7 @@ The selected `modurouter.today` deployment uses a same-origin Vercel proxy for a
 
 ## Local backend
 
-Install Python 3.12 and uv. Install MariaDB, libmagic, Tesseract and its Korean and English language data. Root `.env` is the only manually maintained configuration file and must have mode 600. No example environment file is provided.
+Install Python 3.12 and uv. Install MariaDB, libmagic, Tesseract and its Korean and English language data. DOC, XLS, PPT, ODT and RTF conversion additionally requires Linux with LibreOffice Writer/Calc/Impress, the system Python UNO bindings (`python3-uno`) and `libseccomp2`. The deployment Docker image includes these dependencies and Korean fonts. Native modern-format and text extraction does not require LibreOffice. On macOS or a host without the conversion dependencies, legacy uploads return `LEGACY_CONVERTER_UNAVAILABLE` with recovery guidance. Root `.env` is the only manually maintained configuration file and must have mode 600. No example environment file is provided.
 
 ```sh
 cd server
@@ -150,7 +150,7 @@ Browser disconnect propagation through Vercel is not guaranteed. The client send
 
 The landing page advertises configured Google and administrator login methods. Either can be omitted from `.env`; an unconfigured method remains unavailable. Guest access is available even when neither login method is configured. Existing valid sessions are reused, including signed-in accounts.
 
-`MAX_INPUT_TOKENS` defaults to 16384 and is forwarded by deployment. The estimator reserves two tokens per Hangul/CJK character with framing and headroom, rather than counting every UTF-8 byte. It remains an estimate across providers. Model context windows and existing spending limits still apply. Source prefixes use the available input budget, and excluded content is disclosed beside the answer. The extractor retains its 20,000-character and 20-page limits.
+`MAX_INPUT_TOKENS` defaults to 16384 and is forwarded by deployment. The estimator reserves two tokens per Hangul/CJK character with framing and headroom, rather than counting every UTF-8 byte. It remains an estimate across providers. Model context windows and existing spending limits still apply. Question-relevant excerpts share the available input budget across sources, and excluded content is disclosed beside the answer. The selected routing pool's context window also bounds the input. Extracted text is capped at 80,000 characters per source, and PDFs are limited to 20 pages.
 
 Rejected HTTP calls and failures before a connection is established settle at zero. Interrupted streams and ambiguous read/write timeouts retain reservations because provider charges may exist. Historical unknown charges are not retroactively marked free.
 
@@ -158,26 +158,132 @@ After investigating a reservation overrun and verifying the current model prices
 
 Vercel deployment reads the token from root `.env` and passes it through the child process environment, not command-line arguments. Browser CSP restricts resource origins and disables objects and framing; inline scripts remain allowed for the current Next.js rendering setup.
 
+## Web and document connectors
+
+The server retrieves and extracts source text before asking the answer model to respond.
+Ordinary text models can use these connectors without native vision or tool-call support.
+Optional JSON planning uses eligible models on the tool allowlist; a planning failure
+does not discard already collected sources or prevent an ordinary text answer.
+
+The composer defaults to automatic web search. The API's `search_enabled` field accepts
+`null` (automatic), `true` (always search), or `false` (search off). Automatic selection
+recognizes explicit search requests and expressions for current or changing information.
+Questions with attachments, including follow-ups that reuse them, only trigger automatic
+search when the question explicitly requests it. Explicit HTTP/HTTPS URLs are read first
+in every search mode, so turning search off does not disable a supplied link.
+
+DuckDuckGo HTML search falls back to its lite endpoint and returns up to five results.
+The server then reads up to four result URLs with two concurrent reads. It sends only the
+first 500 characters of the current question as the search query and does not append
+extracted attachment text or prior conversation content. The tool-call limit defaults to
+six and accepts values up to eight through `MAX_TOOL_CALLS_PER_RUN` or administrator
+settings. Existing saved administrator settings remain authoritative. Explicit links and
+other tool calls share that limit. Retrieval gets at most 60 seconds or 60% of the run's
+time limit, whichever is smaller, leaving time for the answer. Retrieval is bounded by input budgets;
+it is not a crawl of every result. Failed pages retain any successful sources and produce
+a warning. If all retrieval fails and no sources are available, the run reports the error.
+
+Public URL reading supports HTML, text and the document/image formats below. It checks
+public network addresses across redirects and DNS resolution. It does not execute
+JavaScript or authenticate to private sites. Document downloads are capped at 10 MiB;
+HTML and text downloads are capped at 2 MiB. Document URLs and uploaded files use the
+same extraction subprocess and 80,000-character text limit. Extraction has a 75-second
+wall-clock limit, and a cancelled run terminates its extraction process group.
+
+| Format | Extracted content |
+| --- | --- |
+| PDF | Native page text and Korean/English OCR for scanned pages, up to 20 pages |
+| HWP / HWPX | Body text with the format-specific handling described below |
+| DOCX | Ordered paragraphs and table cells, text boxes, footnotes/endnotes, headers and footers |
+| XLSX | Worksheet names, row/cell addresses, stored values, formulas and cached results, dates and number-format labels |
+| PPTX | Slide order and numbers, titles, body/table text and speaker notes |
+| DOC / ODT / RTF | Converted to DOCX, then read with the same text extractor |
+| XLS | Converted to XLSX; conversion-time formula results can differ from the original cached results |
+| PPT | Converted to PPTX, then read with the same text extractor |
+| TXT / MD / MARKDOWN / JSON / XML | Decoded source text |
+| CSV / TSV | Quoted fields and multiline values with row and cell coordinates |
+| HTML / HTM | Stored text, headings and table cells; image alternative text only |
+| PNG / JPG / JPEG | Korean and English OCR |
+
+PDF pages with no usable native text or substantial scanned images are rendered with
+`pypdfium2` and passed to Tesseract. OCR failures preserve readable page text where
+possible and mark incomplete extraction. Short native-text pages without substantial
+images do not need OCR. PDF encryption and files over 20 pages are
+rejected. OCR cannot guarantee complete or correctly ordered text, so users should compare
+the preview with the original.
+
+Modern Office files are validated as OOXML packages before extraction. Package expansion
+and XML limits apply; external XML entities and DTDs are rejected. XLSX extraction does
+not evaluate formulas or follow external links. It pairs formula source with the saved
+cached result and identifies missing results. Dates are decoded, number formats are
+retained, and simple numeric formats also include a display value. Complex formatting
+is not a pixel-accurate rendering, and cached results may be stale. Original page and
+table layouts are not preserved. Embedded Office images and charts are not OCRed.
+
+Legacy and compatible formats use a temporary LibreOffice profile and convert to a
+modern Office container. DOC support starts with Word 97; older unsupported containers
+receive a version error. XLS/PPT support depends on a valid supported binary container.
+Conversion disables macros, active content and external-link updates. A Linux seccomp
+filter permits only local UNIX sockets for the private UNO connection and blocks network
+sockets. The converter receives a minimal environment without application credentials.
+XLS formulas may be recalculated during conversion, so the extracted result explicitly
+warns that it can differ from the original stored value. Conversion can change layout
+or omit unsupported objects. Password encryption and DRM require an unlocked copy;
+invalid containers and unavailable converters receive distinct recovery messages.
+
+HTML extraction does not execute scripts, load external resources or render CSS. It
+retains stored text and table coordinates, with alternative text for images. Markdown
+is preserved as source. CSV/TSV parsing preserves quoted separators and embedded newlines
+and labels each row and cell. Text decoding supports UTF-8, UTF-8/16/32 with a BOM and
+CP949; invalid encoding or binary content is rejected.
+
+Uploaded files are capped at 10 MiB and each question accepts up to three attachments.
+The 80,000-character extraction cap is separate from the model's smaller input budget.
+Question-relevant excerpts can omit material even when extraction was complete. The
+preview and source notices disclose truncation and format limitations; a successful
+extraction is not a guarantee that every visual object or every page reached the model.
+PDFs over 20 pages are rejected rather than silently shortened. PDF OCR has a shared
+60-second budget within the overall 75-second extraction timeout; individual image OCR
+gets at most 20 seconds. Partial PDF extraction retains available text and identifies
+unreadable pages.
+
+Extraction processes have a 65-second CPU limit and 12 MiB output-file limit. On Linux,
+native parsers have a 512 MiB virtual-address limit and LibreOffice conversion has a
+2 GiB virtual-address limit. The latter is not a physical-memory allocation: the API
+and worker containers each retain their 768 MiB memory limit, with a 256 MiB temporary
+filesystem. Conversion itself has a 40-second timeout. Cancellation and the outer timeout
+terminate the extraction process group. Python parsers are pinned in `uv.lock`; no
+external document-processing service receives uploaded content.
+
+The original Korean fixtures in `tests/fixtures/documents/` were saved by LibreOffice
+7.4.7 and exercise real DOC/DOCX, XLS/XLSX, PPT/PPTX, ODT and RTF containers. They include
+first/middle/end facts, tables, a text box, a footnote, multiple sheets, later slides
+and speaker notes. Their provenance and generator are recorded in that directory.
+Run `uv run pytest -q tests/test_document_fixtures_issue6.py tests/test_office_fidelity_issue6.py tests/test_text_documents_issue6.py tests/test_legacy_issue6.py`.
+Legacy conversion cases require the Linux deployment image; they skip on hosts without
+its dependencies. HWP/HWPX fixture coverage is separate and does not imply support for
+every Hancom version or embedded object.
+
 ## Attachment recovery
 
-The composer accepts HWP and HWPX alongside TXT, PDF, PNG and JPG. HWP 5 documents
+The composer accepts the formats listed above. HWP 5 documents
 are read from their actual body sections, including compressed and distribution
 documents. Nested paragraph text in tables, text boxes, headers, footers and notes
 is retained, as is equation source text. HWPX sections follow the package's spine
 order. Preview streams are never used as a substitute for the full body.
 
-Extraction is text based: original page layout, embedded images and charts are not
-rendered or OCRed. Image-only documents must be attached as PNG/JPG for OCR. HWP 3
+HWP/HWPX extraction is text based: original page layout, embedded images and charts are
+not rendered or OCRed. Image-only HWP/HWPX content requires a PDF or PNG/JPG copy for OCR. HWP 3
 (Hancom 97) and earlier formats require saving as HWPX. Password encryption and
-DRM require an unlocked copy; they report specific recovery messages. The existing
-20,000-character extraction cap and model context cap still apply, with truncation
+DRM require an unlocked copy; they report specific recovery messages. The
+80,000-character extraction cap and model context cap still apply, with truncation
 shown in the preview and answer. The PDF-specific 20-page cap does not apply to HWP.
 
 HWP containers and HWPX package signatures are checked independently of browser
 MIME values. Parsing runs in the existing bounded worker subprocess, with internal
 stream, decompression and XML limits. DTDs and external XML entities are rejected.
-The new Python dependencies are included in `uv.lock` and the existing Docker
-build; no desktop office installation or external document service is required.
+The HWP/HWPX Python dependencies are included in `uv.lock` and the Docker
+build; these two formats do not require LibreOffice or an external document service.
 Run `uv run pytest -q tests/test_hangul.py tests/test_extract.py` for format cases.
 The harness integration tests also exercise upload, worker extraction, preview,
 model context and follow-up questions with generated HWP/HWPX documents.

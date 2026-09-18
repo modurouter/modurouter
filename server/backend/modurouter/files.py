@@ -12,14 +12,23 @@ from .billing import admission_lock
 from .config import get_settings
 from .conversations import owned_conversation
 from .db import get_db, new_id, utcnow
+from .document_formats import (
+    FORMATS,
+    LEGACY_FORMATS,
+    OFFICE_PARTS,
+    TEXT_EXTENSIONS,
+    TEXT_MIMES,
+    extraction_notes,
+)
 from .errors import AppError
-from .hangul import HWP_MIME, HWPX_MIME, validate_container
+from .hangul import validate_container
+from .legacy_office import validate_legacy
 from .models import Attachment, Job, User
+from .office import validate_office
 
 router = APIRouter(prefix="/v1/attachments")
 settings = get_settings()
-ALLOWED = {".txt": "text/plain", ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-           ".hwp": HWP_MIME, ".hwpx": HWPX_MIME}
+ALLOWED = FORMATS
 HANGUL_UPLOAD_ERRORS = {
     "HWP_INVALID": "한글 문서가 손상되었습니다. 한글에서 다시 저장한 파일을 첨부해 주세요.",
     "HWP_ENCRYPTED": "암호를 해제한 한글 문서를 다시 첨부해 주세요.",
@@ -49,6 +58,7 @@ def attachment_view(row: Attachment):
             "status": "expired" if expired else row.extraction_status,
             "preview": None if expired else row.extracted_text, "truncated": row.truncated,
             "error_code": row.error_code, "retryable": row.retryable,
+            "extraction_notes": extraction_notes(row.mime_type),
             "expires_at": row.expires_at.isoformat() + "Z"}
 
 
@@ -66,7 +76,7 @@ async def upload(file: UploadFile = File(...), conversation_id: str = Form(...),
     filename = Path(file.filename or "").name[:255]
     extension = Path(filename).suffix.lower()
     if extension not in ALLOWED:
-        raise AppError("FILE_UNSUPPORTED", "HWP/HWPX 문서나 TXT/PDF 파일, PNG/JPG 이미지를 첨부해 주세요.")
+        raise AppError("FILE_UNSUPPORTED", "PDF, 한글, Office 문서와 텍스트 파일 또는 PNG/JPG 이미지를 첨부해 주세요.")
     identifier = new_id()
     key = f"{user.id}/{identifier}"
     path = storage_path(key)
@@ -89,7 +99,19 @@ async def upload(file: UploadFile = File(...), conversation_id: str = Form(...),
         finally:
             await asyncio.to_thread(handle.close)
             await file.close()
-        if extension in (".hwp", ".hwpx"):
+        if extension in LEGACY_FORMATS:
+            mime = ALLOWED[extension]
+            try:
+                await asyncio.to_thread(validate_legacy, path, mime)
+            except ValueError as exc:
+                raise AppError(str(exc), "문서가 손상되었거나 암호화되어 있습니다. 암호를 해제하고 원래 프로그램에서 다시 저장해 첨부해 주세요.") from exc
+        elif ALLOWED[extension] in OFFICE_PARTS:
+            mime = ALLOWED[extension]
+            try:
+                await asyncio.to_thread(validate_office, path, mime)
+            except ValueError as exc:
+                raise AppError(str(exc), "Office 문서 형식을 확인해 주세요. 암호화된 파일은 암호를 해제한 뒤 첨부해 주세요.") from exc
+        elif extension in (".hwp", ".hwpx"):
             mime = ALLOWED[extension]
             try:
                 await asyncio.to_thread(validate_container, path, mime)
@@ -101,10 +123,8 @@ async def upload(file: UploadFile = File(...), conversation_id: str = Form(...),
             mime = await asyncio.to_thread(magic.from_file, str(path), mime=True)
         # libmagic classifies valid text by syntax (JSON, HTML, XML, etc.).
         # Keep it inert plain text; the extractor still rejects binary/encoding errors.
-        if extension == ".txt" and (mime.startswith("text/") or mime in {
-            "application/json", "application/xml", "application/javascript", "application/x-ndjson"
-        }):
-            mime = "text/plain"
+        if extension in TEXT_EXTENSIONS and (mime.startswith("text/") or mime in TEXT_MIMES):
+            mime = ALLOWED[extension]
         if size == 0 or mime != ALLOWED[extension]:
             raise AppError("FILE_TYPE_MISMATCH", "파일의 실제 형식과 확장자가 일치하지 않습니다.")
         await admission_lock(db)

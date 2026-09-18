@@ -4,14 +4,30 @@ version = "0.1.0"
 description = "Korean AI harness with bounded OpenRouter routing"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-  "fastapi>=0.135,<1", "uvicorn[standard]>=0.41,<1",
-  "sqlalchemy[asyncio]>=2.0.48,<2.1", "asyncmy>=0.2.11,<0.3",
-  "alembic>=1.18,<2", "pydantic-settings>=2.13,<3",
-  "httpx>=0.28,<1", "authlib>=1.6.9,<2", "joserfc>=1.7,<2", "itsdangerous>=2.2,<3",
-  "python-multipart>=0.0.22,<1", "pypdf>=6,<7", "pillow>=12,<13",
-  "python-magic>=0.4.27,<0.5", "charset-normalizer>=3.4,<4",
-  "beautifulsoup4>=4.14,<5", "aiohttp>=3.13,<4",
-  "olefile>=0.47,<0.48", "defusedxml>=0.7.1,<0.8", "cryptography>=46,<51",
+  "fastapi>=0.135,<1",
+  "uvicorn[standard]>=0.41,<1",
+  "sqlalchemy[asyncio]>=2.0.48,<2.1",
+  "asyncmy>=0.2.11,<0.3",
+  "alembic>=1.18,<2",
+  "pydantic-settings>=2.13,<3",
+  "httpx>=0.28,<1",
+  "authlib>=1.6.9,<2",
+  "joserfc>=1.7,<2",
+  "itsdangerous>=2.2,<3",
+  "python-multipart>=0.0.22,<1",
+  "pypdf>=6,<7",
+  "pillow>=12,<13",
+  "python-magic>=0.4.27,<0.5",
+  "charset-normalizer>=3.4,<4",
+  "beautifulsoup4>=4.14,<5",
+  "aiohttp>=3.13,<4",
+  "olefile>=0.47,<0.48",
+  "defusedxml>=0.7.1,<0.8",
+  "cryptography>=46,<51",
+  "python-docx>=1.2,<2",
+  "openpyxl>=3.1,<4",
+  "python-pptx>=1,<2",
+  "pypdfium2>=5,<6",
 ]
 
 [dependency-groups]

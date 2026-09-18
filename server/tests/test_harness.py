@@ -372,7 +372,12 @@ async def test_native_tool_fragments_normalized_and_accounted(world, monkeypatch
             yield {'usage':{'cost':0,'prompt_tokens':20,'completion_tokens':10},'choices':[]}
     async def page(url):
         return {'title':'Example','url':url,'text':'Reference data','scope':'page'}
+    async def unconsumed_source(execution):
+        # Exercise the optional planner only when retrieval leaves a new allowed URL.
+        await execution.add_sources('search_web', [{'title':'Example','url':'https://example.com',
+            'text':'Search preview','scope':'search_snippet'}])
     monkeypatch.setattr(harness, "create_adapters", lambda config: {"openrouter": Native(config)})
+    monkeypatch.setattr(harness.Execution, 'collect_web_sources', unconsumed_source)
     monkeypatch.setattr(harness, 'read_url', page)
     client, identifier = world
     response = await client.post(f'/v1/conversations/{identifier}/runs', json={'message':'https://example.com 을 요약해 줘'})

@@ -1,7 +1,5 @@
 import asyncio
-import json
 import logging
-import sys
 import time
 from datetime import timedelta
 from decimal import Decimal
@@ -11,6 +9,7 @@ from sqlalchemy import or_, select
 from .billing import settle
 from .config import get_settings
 from .db import Session, utcnow
+from .extraction import extract_file
 from .files import storage_path
 from .models import Attachment, GenerationAttempt, Job, SyncState
 from .providers import create_adapters, usage_cost
@@ -50,22 +49,7 @@ async def process_extraction(identifier: str):
             return
         attachment.extraction_status = "pending"
         key, mime = attachment.storage_key, attachment.mime_type
-    process = await asyncio.create_subprocess_exec(sys.executable, "-m", "modurouter.extract",
-        str(storage_path(key)), mime, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-    try:
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
-        result = json.loads(stdout) if process.returncode == 0 else {"error": "EXTRACTION_FAILED"}
-    except TimeoutError:
-        process.kill()
-        await process.wait()
-        result = {"error": "EXTRACTION_TIMEOUT"}
-    except asyncio.CancelledError:
-        if process.returncode is None:
-            process.kill()
-        await process.wait()
-        raise
-    except (ValueError, UnicodeError):
-        result = {"error": "EXTRACTION_FAILED"}
+    result = await extract_file(storage_path(key), mime)
     async with Session.begin() as db:
         attachment = await db.get(Attachment, identifier, with_for_update=True)
         if not attachment or attachment.expires_at <= utcnow() or attachment.extraction_status == "expired":
@@ -74,7 +58,7 @@ async def process_extraction(identifier: str):
         attachment.error_code = result.get("error")
         attachment.extracted_text = result.get("text")
         attachment.truncated = result.get("truncated", False)
-        attachment.retryable = result.get("error") in ("EXTRACTION_TIMEOUT", "OCR_TIMEOUT")
+        attachment.retryable = result.get("error") in ("EXTRACTION_TIMEOUT", "OCR_TIMEOUT", "LEGACY_CONVERSION_TIMEOUT")
 
 
 async def expire_files():

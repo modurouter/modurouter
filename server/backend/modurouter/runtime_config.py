@@ -28,7 +28,7 @@ class RoutingPolicy(BaseModel):
     max_input_tokens: int = Field(ge=512, le=32768)
     max_output_tokens: int = Field(ge=1, le=8192)
     max_model_calls_per_run: int = Field(ge=1, le=3)
-    max_tool_calls_per_run: int = Field(ge=1, le=2)
+    max_tool_calls_per_run: int = Field(ge=1, le=8)
     run_timeout_seconds: int = Field(ge=10, le=120)
     platform_concurrency: int = Field(ge=1, le=5)
     price_refresh_seconds: int = Field(ge=30, le=86400)

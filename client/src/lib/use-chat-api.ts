@@ -30,7 +30,7 @@ export function useChatApi() {
     catch { operation.cancelling = false; operation.cancel = false; throw new Error('중지 요청을 보내지 못했어요. 다시 눌러 주세요.'); }
   }
 
-  async function send(text: string, mode: Mode, options: {attachment_ids?: string[]; search_enabled?: boolean} = {}) {
+  async function send(text: string, mode: Mode, options: {attachment_ids?: string[]; search_enabled?: boolean | null} = {}) {
     if (current.current) return;
     const store = useChatStore.getState();
     conversation.current = store.conversationId ?? null;
@@ -79,7 +79,7 @@ export function useChatApi() {
       const selected = settings.models?.find(m => modelKey(m) === settings.model);
       const supported = ['auto','free'].includes(settings.model) ? settings.models?.filter(m => settings.model === 'free' ? m.is_free : m.auto_eligible).flatMap(m => m.efforts || []) : selected?.efforts;
       const effort = supported?.includes(effortOptions[settings.effort]?.id) ? effortOptions[settings.effort].id : supported?.[0];
-      const body = JSON.stringify({ ...(settings.chosen ? { routing: routingFor(settings.model, settings.models) } : {}), reasoning_effort: effort || null, message: text, attachment_ids: options.attachment_ids || [], search_enabled: options.search_enabled || false, explanation_mode: mode === 'student' ? 'standard' : 'simple' });
+      const body = JSON.stringify({ ...(settings.chosen ? { routing: routingFor(settings.model, settings.models) } : {}), reasoning_effort: effort || null, message: text, attachment_ids: options.attachment_ids || [], search_enabled: options.search_enabled ?? null, explanation_mode: mode === 'student' ? 'standard' : 'simple' });
       const key = uncertain.current?.body === body && uncertain.current.conversation === conversation.current ? uncertain.current.key : crypto.randomUUID();
       uncertain.current = { body, key, conversation: conversation.current };
       stage('질문 전송 중');
