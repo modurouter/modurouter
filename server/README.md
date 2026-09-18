@@ -150,7 +150,7 @@ Browser disconnect propagation through Vercel is not guaranteed. The client send
 
 The landing page advertises configured Google and administrator login methods. Either can be omitted from `.env`; an unconfigured method remains unavailable. Guest access is available even when neither login method is configured. Existing valid sessions are reused, including signed-in accounts.
 
-`MAX_INPUT_TOKENS` defaults to 16384 and is forwarded by deployment. The estimator reserves two tokens per Hangul/CJK character with framing and headroom, rather than counting every UTF-8 byte. It remains an estimate across providers. Model context windows and existing spending limits still apply. Question-relevant excerpts share the available input budget across sources, and excluded content is disclosed beside the answer. The selected routing pool's context window also bounds the input. Extracted text is capped at 80,000 characters per source, and PDFs are limited to 20 pages.
+`MAX_INPUT_TOKENS` defaults to 16384 and is forwarded by deployment. The estimator reserves two tokens per Hangul/CJK character with framing and headroom, rather than counting every UTF-8 byte. It remains an estimate across providers. Model context windows and existing spending limits still apply. Question-relevant excerpts share the available input budget across sources, and excluded content is disclosed beside the answer. The selected routing pool's context window also bounds the input. Extracted text is capped at 80,000 characters per source, and PDFs read up to 200 pages, with any omitted pages disclosed as partial extraction.
 
 Rejected HTTP calls and failures before a connection is established settle at zero. Interrupted streams and ambiguous read/write timeouts retain reservations because provider charges may exist. Historical unknown charges are not retroactively marked free.
 
@@ -192,7 +192,7 @@ wall-clock limit, and a cancelled run terminates its extraction process group.
 
 | Format | Extracted content |
 | --- | --- |
-| PDF | Native page text and Korean/English OCR for scanned pages, up to 20 pages |
+| PDF | Native page text and Korean/English OCR for scanned pages, up to 200 pages with partial-extraction notices |
 | HWP / HWPX | Body text with the format-specific handling described below |
 | DOCX | Ordered paragraphs and table cells, text boxes, footnotes/endnotes, headers and footers |
 | XLSX | Worksheet names, row/cell addresses, stored values, formulas and cached results, dates and number-format labels |
@@ -208,8 +208,8 @@ wall-clock limit, and a cancelled run terminates its extraction process group.
 PDF pages with no usable native text or substantial scanned images are rendered with
 `pypdfium2` and passed to Tesseract. OCR failures preserve readable page text where
 possible and mark incomplete extraction. Short native-text pages without substantial
-images do not need OCR. PDF encryption and files over 20 pages are
-rejected. OCR cannot guarantee complete or correctly ordered text, so users should compare
+images do not need OCR. Encrypted PDFs are rejected. Longer PDFs retain readable
+text within the page and text budgets and explicitly disclose omitted pages. OCR cannot guarantee complete or correctly ordered text, so users should compare
 the preview with the original.
 
 Modern Office files are validated as OOXML packages before extraction. Package expansion
@@ -242,7 +242,7 @@ The 80,000-character extraction cap is separate from the model's smaller input b
 Question-relevant excerpts can omit material even when extraction was complete. The
 preview and source notices disclose truncation and format limitations; a successful
 extraction is not a guarantee that every visual object or every page reached the model.
-PDFs over 20 pages are rejected rather than silently shortened. PDF OCR has a shared
+PDFs read up to 200 pages; remaining pages are explicitly disclosed as omitted. PDF OCR has a shared
 60-second budget within the overall 75-second extraction timeout; individual image OCR
 gets at most 20 seconds. Partial PDF extraction retains available text and identifies
 unreadable pages.

@@ -21,6 +21,8 @@ from .office import ERRORS as OFFICE_ERRORS
 from .office import office_text
 from .text_documents import text_document
 
+MAX_PDF_PAGES = 200
+
 
 def image_text(path: Path, *, deadline: float | None = None) -> str:
     # Compare automatic layout with a text block. Keep automatic column ordering
@@ -61,13 +63,15 @@ def pdf_text(path: Path) -> tuple[str, bool]:
     reader = PdfReader(path, strict=False)
     if reader.is_encrypted:
         raise ValueError("PDF_ENCRYPTED")
-    if len(reader.pages) > 20:
-        raise ValueError("PDF_PAGE_LIMIT")
     deadline = time.monotonic() + 60
     parts, missing, failures, size = [], [], [], 0
+    skipped_from = None
     rendered = None
     try:
         for index, page in enumerate(reader.pages):
+            if index >= MAX_PDF_PAGES:
+                skipped_from = index + 1
+                break
             try:
                 text = page.extract_text() or ""
             except Exception:
@@ -132,7 +136,7 @@ def pdf_text(path: Path) -> tuple[str, bool]:
                 size += len(parts[-1]) + 1
             if size > MAX_TEXT:
                 if index + 1 < len(reader.pages):
-                    missing.extend(range(index + 2, len(reader.pages) + 1))
+                    skipped_from = index + 2
                 break
     finally:
         if rendered is not None:
@@ -142,7 +146,9 @@ def pdf_text(path: Path) -> tuple[str, bool]:
         raise ValueError(code if code in {"OCR_FAILED", "OCR_LOW_CONFIDENCE", "OCR_TIMEOUT", "NO_EXTRACTABLE_TEXT"}
                          else "EXTRACTION_FAILED")
     warning = f"[일부 페이지의 OCR 또는 추출을 완료하지 못했습니다: {', '.join(map(str, missing))}]\n" if missing else ""
-    return warning + "\n\n".join(parts), bool(missing)
+    if skipped_from is not None:
+        warning += f"[처리 한도로 {skipped_from}~{len(reader.pages)}페이지는 읽지 못했습니다.]\n"
+    return warning + "\n\n".join(parts), bool(missing) or skipped_from is not None
 
 
 def extract(path: Path, mime: str):

@@ -21,18 +21,34 @@ def test_binary_text_rejected(tmp_path):
         extract(path, "text/plain")
 
 
-def test_pdf_page_limit_and_encryption(tmp_path):
+def test_pdf_over_twenty_pages_and_encryption(tmp_path):
     path = tmp_path / "pages.pdf"
     writer = PdfWriter()
-    for _ in range(21):
-        writer.add_blank_page(width=200, height=200)
+    for index in range(21):
+        page = writer.add_blank_page(width=200, height=200)
+        add_native_pdf_text(writer, page, f'Page {index + 1} content')
     writer.write(path)
-    with pytest.raises(ValueError, match="PDF_PAGE_LIMIT"):
-        extract(path, "application/pdf")
+    result = extract(path, "application/pdf")
+    assert 'Page 21 content' in result['text']
+    assert not result['truncated']
     writer.encrypt("password")
     writer.write(path)
     with pytest.raises(ValueError, match="PDF_ENCRYPTED"):
         extract(path, "application/pdf")
+
+
+def test_long_pdf_keeps_readable_pages_and_discloses_page_cap(tmp_path):
+    from modurouter.extract import MAX_PDF_PAGES
+
+    writer = PdfWriter()
+    for index in range(MAX_PDF_PAGES + 1):
+        add_native_pdf_text(writer, writer.add_blank_page(width=200, height=200), f'Page {index + 1} content')
+    path = tmp_path / 'long.pdf'
+    writer.write(path)
+    result = extract(path, 'application/pdf')
+    assert f'Page {MAX_PDF_PAGES} content' in result['text']
+    assert f'Page {MAX_PDF_PAGES + 1} content' not in result['text']
+    assert '처리 한도' in result['text'] and result['truncated']
 
 
 def test_scanned_pdf_no_text_is_failure(tmp_path):
