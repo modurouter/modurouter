@@ -39,7 +39,7 @@ export function useSpeechInput(onText: (text: string) => void) {
     setNotice('마이크 사용을 준비하고 있어요.');
     try {
       const config = await api<{stt_available?: boolean}>('/v1/config');
-      if (!config.stt_available) throw new Error('OpenAI 음성 인식 서버를 준비 중이에요. 서버 업데이트 후 사용할 수 있어요.');
+      if (!config.stt_available) throw new Error('지금은 음성 입력을 사용할 수 없어요. 잠시 후 다시 시도해 주세요.');
       if (cancelled.current) { busy.current = false; return; }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (cancelled.current) { stream.getTracks().forEach(track => track.stop()); busy.current = false; return; }
@@ -52,7 +52,7 @@ export function useSpeechInput(onText: (text: string) => void) {
       recorder.onstop = async () => {
         release(); setRecording(false);
         if (cancelled.current) { busy.current = false; return; }
-        setProcessing(true); setNotice('OpenAI에서 음성을 글로 바꾸고 있어요.');
+        setProcessing(true); setNotice('말씀하신 내용을 글로 옮기고 있어요.');
         const abort = new AbortController(); request.current = abort;
         try {
           const wav = await encodeSpeech(new Blob(chunks, { type: recorder.mimeType }));
@@ -67,13 +67,13 @@ export function useSpeechInput(onText: (text: string) => void) {
           if (cancelled.current) return;
           if (typeof data.text !== 'string' || !data.text.trim()) throw new Error('목소리를 인식하지 못했어요. 다시 녹음해 주세요.');
           write.current((existing + (existing.trim() ? ' ' : '') + data.text.trim()));
-          setNotice('음성을 입력했어요. 내용을 확인한 뒤 전송해 주세요.');
+          setNotice('말씀하신 내용을 입력했어요.');
         } catch (error) {
           if (!cancelled.current) setNotice(error instanceof Error ? error.message : '음성 인식에 실패했어요.');
         } finally { busy.current = false; request.current = null; setProcessing(false); }
       };
       recorder.start(); setRecording(true);
-      setNotice('듣고 있어요. 다시 누르면 녹음한 음성을 OpenAI에 보내요. 최대 10분.');
+      setNotice('편하게 말씀해 주세요. 다 하셨으면 정지 버튼을 눌러 주세요.');
       timer.current = setTimeout(stop, 600_000);
     } catch (error) {
       release(); busy.current = false;

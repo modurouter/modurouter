@@ -105,7 +105,7 @@ export function Chat() {
         {requestError && <p className="request-error" role="alert">{requestError}</p>}
         <AnimatePresence>{speech.notice && <motion.div className="voice-panel glass" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} role="status">
           <div className="voice-wave" aria-hidden="true">{[12, 24, 17, 32, 20, 28, 14].map((height, i) => <span key={i} style={{ height, animationDelay: `${i * .1}s` }} />)}</div>
-          <p>{speech.notice}<span>인식한 내용을 확인한 뒤 전송해 주세요.</span></p>
+          <p>{speech.notice}</p>
           <Button aria-label="음성 입력 안내 닫기" onClick={speech.dismiss}><X size={18} /></Button>
         </motion.div>}</AnimatePresence>
         <div className="input-row">
@@ -114,7 +114,7 @@ export function Chat() {
             <textarea ref={textarea} aria-label="메시지 입력" placeholder={currentMode.placeholder} value={input} rows={1} maxLength={12000} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); send(); } }} />
             <motion.button whileTap={{ scale: .92 }} className={`send-button ${input.trim() || streaming ? 'is-ready' : ''}`} type={streaming ? 'button' : 'submit'} onClick={streaming ? () => stop() : undefined} disabled={!streaming && !input.trim()} aria-label={streaming ? '응답 중지' : '메시지 전송'}>{streaming ? <Square size={17} fill="currentColor" /> : <ArrowUp size={29} strokeWidth={1.7} />}</motion.button>
           </form>
-          <motion.button className={`microphone glass ${recording ? 'is-recording' : ''}`} whileHover={{ scale: 1.045 }} whileTap={{ scale: .94 }} disabled={speech.processing} onClick={() => recording ? speech.stop() : void speech.start(input)} aria-label={recording ? '음성 입력 중지' : '음성 입력'} title="한국어 음성 입력 · OpenAI 전사 · 최대 10분" aria-pressed={recording}><GlassSurface radius={50} />{recording ? <Square size={21} strokeWidth={1.5} /> : <Mic size={27} strokeWidth={1.45} />}</motion.button>
+          <motion.button className={`microphone glass ${recording ? 'is-recording' : ''}`} whileHover={{ scale: 1.045 }} whileTap={{ scale: .94 }} disabled={speech.processing} onClick={() => recording ? speech.stop() : void speech.start(input)} aria-label={recording ? '음성 입력 중지' : '음성 입력'} title="음성으로 입력하기 · 최대 10분" aria-pressed={recording}><GlassSurface radius={50} />{recording ? <Square size={21} strokeWidth={1.5} /> : <Mic size={27} strokeWidth={1.45} />}</motion.button>
         </div>
         <div className="settings-row">
         <div className="mode-track glass" role="radiogroup" aria-label="대화 모드" ref={modeTrack} onPointerDown={(e) => { pointerStart.current = e.clientX; }} onPointerMove={(e) => { if (pointerStart.current !== null && Math.abs(e.clientX - pointerStart.current) > 6) { e.currentTarget.setPointerCapture(e.pointerId); selectFromPointer(e.clientX); } }} onPointerUp={() => { pointerStart.current = null; }} onPointerCancel={() => { pointerStart.current = null; }}>
