@@ -28,7 +28,12 @@ export async function api<T>(url: string, init: RequestInit = {}, csrf?: string)
   }
   return response.json();
 }
-export async function ensureSession(): Promise<User> {
+let sessionRequest: Promise<User> | null = null;
+export function ensureSession(): Promise<User> {
+  if (!sessionRequest) sessionRequest = loadSession().finally(() => { sessionRequest = null; });
+  return sessionRequest;
+}
+async function loadSession(): Promise<User> {
   try {
     return await api<User>('/v1/me');
   } catch (error) {
@@ -63,7 +68,7 @@ export function runErrorMessage(code?: string): string {
 }
 export type Source = {source_id:string; title:string; url?:string; scope:string; attachment_id?:string; truncated?:boolean};
 export type RoutingPreference = {mode:"auto"|"free"|"manual"; provider?:string; model_id?:string};
-export type ModelOption = {provider:string; model_id:string; name:string; input_per_m:string; output_per_m:string; is_free:boolean; context_length:number; supports_tools:boolean; auto_eligible:boolean; price_kind:string};
+export type ModelOption = {efforts?:string[]; provider:string; model_id:string; name:string; input_per_m:string; output_per_m:string; is_free:boolean; context_length:number; supports_tools:boolean; auto_eligible:boolean; price_kind:string};
 export type ModelCatalog = {default_routing?:RoutingPreference; allow_manual_selection?:boolean; providers?:{provider:string;stale:boolean;last_success_at:string|null}[]; models:ModelOption[]; last_success_at:string|null; refresh_error:string|null; stale:boolean};
 export type Run = {run_id:string; status:string; response:string; selected_model?:string; selected_provider?:string; routing?:RoutingPreference; cost_usd:string; pending_usd:string; cost_status:string; cost_source?:string; providers?:string[]; error_code?:string; sources:Source[]; attempts:number; input_tokens:number; output_tokens:number; tokens_complete:boolean; context_truncated:boolean};
 export type Message = {id:string; run_id:string; role:string; content:string; status:string};

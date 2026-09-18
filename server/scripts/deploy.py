@@ -44,7 +44,7 @@ def main():
             target.write(payload)
         sftp.chmod("/opt/modurouter/.env", 0o600)
         sftp.close()
-        command = "cd /opt/modurouter && tar -xzf source.tar.gz && rm source.tar.gz && (docker image tag modurouter-api:local modurouter-api:previous 2>/dev/null || true) && docker compose build api && docker compose up -d mariadb && docker compose run --rm api alembic upgrade head && docker compose up -d && docker compose ps"
+        command = "cd /opt/modurouter && tar -xzf source.tar.gz && rm source.tar.gz && rm -f backend/migrations/versions/0006_routing_choice.py backend/migrations/versions/0007_runtime_settings.py && (docker image tag modurouter-api:local modurouter-api:previous 2>/dev/null || true) && docker compose build api && docker compose up -d mariadb && docker compose run --rm api alembic upgrade head && docker compose up -d && docker compose exec -T proxy caddy reload --config /etc/caddy/Caddyfile && docker compose ps"
         _, stdout, stderr = client.exec_command(command, timeout=1800)
         # Read both channels together so Docker build progress cannot fill stderr's window.
         channel = stdout.channel

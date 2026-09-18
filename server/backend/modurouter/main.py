@@ -12,7 +12,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import admin, auth, conversations, files, harness
+from . import admin, auth, conversations, files, harness, speech
 from .billing import ACTIVE, usage_summary
 from .config import get_settings
 from .db import Session, engine, get_db, utcnow
@@ -100,9 +100,12 @@ async def ready(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/v1/config")
-async def public_config():
+async def public_config(db: AsyncSession = Depends(get_db)):
+    config = await effective_settings(db, settings)
     return {"google_login_available": settings.google_configured, "admin_login_available": settings.admin_configured, "max_attachment_bytes": settings.max_upload_bytes,
-            "max_attachments": 3, "voice_notice": "음성 인식 시 브라우저 제공자의 서버로 음성이 전송될 수 있습니다."}
+            "max_attachments": 3, "stt_available": "openai" in config.configured_providers,
+            "stt_model": speech.MODEL, "stt_max_seconds": speech.MAX_SECONDS,
+            "voice_notice": "녹음한 음성은 OpenAI로 전송되어 글로 변환됩니다. 한 번에 최대 10분입니다."}
 
 
 @app.get("/v1/usage")
@@ -150,3 +153,5 @@ app.include_router(auth.router)
 app.include_router(conversations.router)
 app.include_router(files.router)
 app.include_router(harness.router)
+
+app.include_router(speech.router)

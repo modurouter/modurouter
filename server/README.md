@@ -86,7 +86,7 @@ The quality evaluator accepts `--provider openrouter|zenmux|openai|upstage`.
 
 ## User model choice and administration
 
-Apply migrations through `0007` before running this version. The composer offers automatic
+Apply migrations through `0008` before running this version. The composer offers automatic
 cost ordering, free-only routing, and explicit provider/model selection. Free-only requests
 never fall back to paid models. Explicit selection does not substitute another model or
 provider and is allowed above the automatic price caps. OpenRouter receives the selected

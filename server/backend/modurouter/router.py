@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .config import Settings
 from .db import new_id, utcnow
 from .errors import AppError
+from .model_options import low_efforts
 from .models import GenerationAttempt, PriceSnapshot, ProviderModel, SyncState
 
 MILLION = Decimal(1_000_000)
@@ -250,6 +251,7 @@ async def model_catalog(db: AsyncSession, settings: Settings) -> dict:
             "allow_manual_selection": settings.allow_manual_selection, "models": [
         {"provider": c.provider_code, "model_id": c.model_id,
          "name": c.price_data.get("name") or c.model_id,
+         "efforts": low_efforts(c.provider_code, c.model_id, c.price_data),
          "input_per_m": str(c.input_per_m), "output_per_m": str(c.output_per_m),
          "is_free": c.input_per_m == c.output_per_m == 0,
          "context_length": c.price_data["context_length"],

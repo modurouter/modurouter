@@ -222,6 +222,17 @@ class RuntimeLock(Base):
     name: Mapped[str] = mapped_column(String(64), primary_key=True)
 
 
+class SpeechRequest(Base):
+    __tablename__ = "speech_requests"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    quota_date: Mapped[date] = mapped_column(Date)
+    reserved_usd: Mapped[Decimal] = mapped_column(Numeric(20, 10))
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    created_at: Mapped[datetime] = mapped_column(timestamp, default=utcnow)
+
+
 for table in Base.metadata.tables.values():
     table.dialect_options["mysql"]["engine"] = "InnoDB"
     table.dialect_options["mysql"]["charset"] = "utf8mb4"

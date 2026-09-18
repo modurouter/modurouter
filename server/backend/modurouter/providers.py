@@ -20,7 +20,7 @@ class ProviderError(AppError):
 
 class ProviderAdapter(Protocol):
     async def list_models(self) -> list[dict]: ...
-    def stream_chat(self, model: str, messages: list[dict], max_tokens: int) -> AsyncIterator[dict]: ...
+    def stream_chat(self, model: str, messages: list[dict], max_tokens: int, reasoning_effort: str | None = None) -> AsyncIterator[dict]: ...
     async def get_generation_usage(self, generation_id: str) -> dict: ...
 
 
@@ -58,10 +58,19 @@ class OpenRouterAdapter:
                                      "completion": float(self.settings.output_price_cap_usd_per_m),
                                      "request": 0}}}
 
-    async def stream_chat(self, model: str, messages: list[dict], max_tokens: int):
+    async def stream_chat(self, model: str, messages: list[dict], max_tokens: int, reasoning_effort: str | None = None):
         if not self.api_key:
             raise ProviderError(401, not_billable=True)
         payload = self.payload(model, messages, max_tokens)
+        if reasoning_effort is not None:
+            if reasoning_effort not in ("minimal", "low"):
+                raise ValueError("Only low-cost reasoning effort is allowed")
+            if self.code == "openrouter":
+                payload["reasoning"] = {"effort": reasoning_effort, "exclude": True}
+            elif self.code == "openai" and model == "openai/gpt-5-nano":
+                payload["reasoning_effort"] = reasoning_effort
+            else:
+                raise ValueError("Reasoning effort is not supported by this route")
         try:
             async with self.client.stream("POST", f"{self.base_url}/chat/completions",
                                           headers=self.headers, json=payload) as response:
