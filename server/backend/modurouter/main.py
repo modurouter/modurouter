@@ -12,11 +12,12 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, conversations, files, harness
+from . import auth, conversations, files, harness, speech
 from .billing import ACTIVE, usage_summary
 from .config import get_settings
 from .db import Session, engine, get_db, utcnow
 from .errors import AppError
+from .model_options import catalog_view
 from .models import Attachment, Conversation, Job, LoginSession, Message, Run, User
 from .router import candidates
 from .router import model_status as provider_model_status
@@ -100,12 +101,19 @@ async def ready(db: AsyncSession = Depends(get_db)):
 @app.get("/v1/config")
 async def public_config():
     return {"google_login_available": settings.google_configured, "admin_login_available": settings.admin_configured, "max_attachment_bytes": settings.max_upload_bytes,
-            "max_attachments": 3, "voice_notice": "음성 인식 시 브라우저 제공자의 서버로 음성이 전송될 수 있습니다."}
+            "max_attachments": 3, "stt_available": bool(settings.openai_api_key.get_secret_value()),
+            "voice_notice": "녹음한 음성은 OpenAI로 전송되어 글로 변환됩니다. 한 번에 최대 60초입니다."}
 
 
 @app.get("/v1/usage")
 async def usage(user: User = Depends(auth.current_user), db: AsyncSession = Depends(get_db)):
     return await usage_summary(db, user.id, settings)
+
+
+@app.get("/v1/models")
+async def model_options(db: AsyncSession = Depends(get_db)):
+    # Public catalog, no user/session creation or paid model calls.
+    return catalog_view(await candidates(db, settings, 0))
 
 
 @app.get("/v1/models/status")
@@ -142,3 +150,5 @@ app.include_router(auth.router)
 app.include_router(conversations.router)
 app.include_router(files.router)
 app.include_router(harness.router)
+
+app.include_router(speech.router)
