@@ -183,6 +183,14 @@ class Execution:
                 run.error_code = error
             run.selected_model = self.selected_model
 
+    async def select_model(self, model):
+        if model == self.selected_model:
+            return
+        self.selected_model = model
+        async with Session.begin() as db:
+            (await db.get(Run, self.run_id)).selected_model = model
+        await self.emit("model", selected_model=model)
+
     async def add_sources(self, name, result, elapsed=0, error=None):
         safe = []
         for item in result:
@@ -263,6 +271,8 @@ class Execution:
             submitted = False
             try:
                 await self.status("model")
+                if not internal:
+                    await self.select_model(candidate.model_id)
                 submitted = True
                 adapter = self.adapters[candidate.provider_code]
                 async for event in adapter.stream_chat(candidate.model_id, messages, settings.max_output_tokens):
@@ -273,6 +283,8 @@ class Execution:
                             stored.generation_id = generation_id
                     actual_model = event.get("model") or actual_model
                     actual_provider = event.get("provider") or actual_provider
+                    if not internal and actual_model:
+                        await self.select_model(actual_model)
                     if event.get("usage"):
                         usage = event["usage"]
                         async with Session.begin() as db:
@@ -308,7 +320,6 @@ class Execution:
                             if not self.response:
                                 await self.status("streaming")
                             self.response += delta
-                            self.selected_model = actual_model or candidate.model_id
                             await self.emit("delta", text=delta)
                             if time.monotonic() - self.last_save > 0.5:
                                 await self.save_response()
@@ -332,7 +343,6 @@ class Execution:
                         raise AppError("TOOL_PLAN_INVALID", "모델이 답변 대신 내부 요청을 반환했습니다.")
                     output = citation_filter.feed(output, final=True)
                     self.response += output
-                    self.selected_model = actual_model or candidate.model_id
                     await self.emit("delta", text=output)
                 elif not internal:
                     tail = citation_filter.feed("", final=True)

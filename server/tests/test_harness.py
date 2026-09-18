@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import timedelta
 from decimal import Decimal
 
@@ -175,6 +176,36 @@ async def test_429_falls_back_once_and_releases_rejected_charge(world, provider)
     assert "event: done" in response.text
     assert provider.calls == ["test/a", "test/b"]
     assert '"cost_status": "confirmed"' in response.text
+    selections = [json.loads(frame.split("data: ")[1])["selected_model"]
+                  for frame in response.text.split("\n\n") if frame.startswith("event: model\n")]
+    assert selections == ["test/a", "test/b"]
+
+
+async def test_model_is_visible_before_output_and_tracks_actual_model(world, provider, database, monkeypatch):
+    client, identifier = world
+
+    async def stream(self, model, messages, max_tokens):
+        async with database() as db:
+            run = await db.scalar(select(Run))
+            assert run.selected_model == model
+        yield {"model": "test/actual", "choices": []}
+        async with database() as db:
+            run = await db.scalar(select(Run))
+            assert run.selected_model == "test/actual"
+        yield {"choices": [{"delta": {"content": "답변입니다."}}]}
+        yield {"usage": {"cost": 0, "prompt_tokens": 20, "completion_tokens": 10}, "choices": []}
+
+    monkeypatch.setattr(provider, "stream_chat", stream)
+    response = await client.post(f"/v1/conversations/{identifier}/runs", json={"message": "질문"})
+    events = [(frame.split("\n")[0], json.loads(frame.split("data: ")[1]))
+              for frame in response.text.split("\n\n") if frame.startswith("event:")]
+    selections = [data["selected_model"] for kind, data in events if kind == "event: model"]
+    assert selections == ["test/a", "test/actual"]
+    assert response.text.index('"selected_model": "test/actual"') < response.text.index("event: delta")
+    run_id = events[0][1]["run_id"]
+    saved = (await client.get(f"/v1/runs/{run_id}")).json()
+    assert saved["selected_model"] == "test/actual"
+    assert saved["status"] == "completed"
 
 
 async def test_search_failure_reports_error_without_fabricating_answer(world, provider, monkeypatch, database, caplog):
