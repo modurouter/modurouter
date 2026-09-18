@@ -125,7 +125,7 @@ const attachmentErrors: Record<string, string> = {
   OFFICE_SIZE_LIMIT: 'Office 문서의 내부 데이터가 너무 큽니다. 시트나 슬라이드를 나누어 다시 첨부해 주세요.',
   FILE_TYPE_MISMATCH: '파일의 실제 형식과 확장자가 다릅니다. 원본 앱에서 지원 형식으로 저장해 다시 첨부해 주세요.',
   PDF_ENCRYPTED: '암호화된 PDF는 읽을 수 없습니다. 암호를 해제한 파일을 다시 첨부해 주세요.',
-  PDF_PAGE_LIMIT: 'PDF는 20쪽까지 읽을 수 있습니다. 파일을 나누어 다시 첨부해 주세요.',
+  PDF_PAGE_LIMIT: '이전에 PDF 페이지 제한으로 읽지 못한 파일입니다. 파일을 다시 첨부해 주세요.',
   NO_EXTRACTABLE_TEXT: '문서에서 읽을 수 있는 글자를 찾지 못했습니다. 스캔 PDF는 자동으로 글자를 인식하므로 더 선명한 원본이나 텍스트 파일을 첨부해 주세요.',
   FILE_ENCODING_INVALID: '텍스트 인코딩을 읽을 수 없습니다. UTF-8 형식의 TXT로 저장해 다시 첨부해 주세요.',
   IMAGE_PIXEL_LIMIT: '이미지가 너무 큽니다. 2천만 픽셀 이하로 줄여 다시 첨부해 주세요.',
