@@ -247,3 +247,10 @@ button,input,select,textarea {font:inherit}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:.01ms!important}}
 .activity-trigger {flex-wrap:wrap;max-width:100%}.active-model {font-size:11px;overflow-wrap:anywhere;color:var(--muted);font-weight:400}
 .composer textarea:focus-visible {outline:2px solid var(--ink);outline-offset:4px}
+
+.workspace-login {display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;white-space:nowrap;padding:8px 12px;border:1px solid #dfe2e8;border-radius:12px;background:#fff;color:var(--ink);text-decoration:none;font-size:13px;font-weight:500}
+.workspace-login:hover {background:#f3f5f8;border-color:#bac1cc}
+.workspace-login:focus-visible {outline:2px solid var(--ink);outline-offset:3px}
+.workspace-login[aria-disabled=true] {opacity:.5;cursor:default}
+@media(max-width:600px){.workspace-nav>button>span{display:none}.workspace-login{padding:8px;font-size:12px}.workspace-nav{flex-shrink:0}}
+@media(max-width:360px){.chat-header .wordmark{font-size:20px}.workspace-nav{gap:2px}.workspace-login{gap:4px;padding:7px}}

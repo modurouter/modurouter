@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { AlertDialog } from '@base-ui/react/alert-dialog';
-import { History, Plus, Trash2, X } from 'lucide-react';
+import { History, LogIn, Plus, Trash2, X } from 'lucide-react';
 import { apiUrl } from '@/lib/api';
 import type { useChatWorkspace } from '@/lib/use-chat-workspace';
 
@@ -27,7 +27,7 @@ export function WorkspaceMenu({workspace,disabled,onNavigate}: {workspace:Return
         <div className="conversation-list">{workspace.conversations.map(c=><div key={c.id} data-active={workspace.conversationId===c.id}><button disabled={disabled} onClick={()=>{onNavigate();void workspace.openConversation(c.id);setOpen(false);}}>{c.title}</button><ConfirmDelete label={`${c.title} 대화 삭제`} description="이 대화와 첨부파일을 삭제합니다. 되돌릴 수 없습니다." action={()=>workspace.removeConversation(c.id)} disabled={disabled}/></div>)}{!workspace.conversations.length&&<p>저장된 대화가 없습니다.</p>}{workspace.cursor&&<button disabled={disabled} onClick={()=>void workspace.loadMore()}>이전 대화 더 보기</button>}</div>
         <div className="account-summary"><p>{workspace.user?.guest?'로그인 없이 이용 중':workspace.user?.display_name || '연결 중'}</p>
           {workspace.usage&&<p>오늘 남은 횟수: {workspace.usage.remaining_requests===null?'제한 없음':`${workspace.usage.remaining_requests}회`}<br/>남은 예산: ${Number(workspace.usage.remaining_usd).toFixed(4)}<br/>정산 대기: ${Number(workspace.usage.reserved_usd).toFixed(4)}</p>}
-          {workspace.user?.guest&&workspace.config?.google_login_available&&<a href={apiUrl('/auth/google')}>Google 로그인</a>}
+          {workspace.user?.guest&&workspace.config?.google_login_available&&<a href={apiUrl('/auth/google/start')}>Google 로그인</a>}
           {workspace.config?.admin_login_available&&<a href="/admin">{workspace.user?.admin?'관리자 설정':'관리자 로그인'}</a>}
           {workspace.user&&!workspace.user.guest&&<button disabled={disabled} onClick={()=>void workspace.logout().catch(e=>setError(e.message))}>로그아웃</button>}
           {workspace.user&&<div className="account-delete"><span>{workspace.user.guest?'전체 대화 기록 삭제':'계정 삭제'}</span><ConfirmDelete label={workspace.user.guest?'전체 대화 기록 삭제':'계정 삭제'} description="모든 대화와 첨부파일을 삭제합니다. 개인 정보는 지우고 비용 기록만 남깁니다. 되돌릴 수 없습니다." action={workspace.eraseAccount} disabled={disabled}/></div>}
@@ -35,5 +35,10 @@ export function WorkspaceMenu({workspace,disabled,onNavigate}: {workspace:Return
         </div>
       </Popover.Popup></Popover.Positioner></Popover.Portal>
     </Popover.Root>
+    {workspace.config?.google_login_available && (!workspace.user || workspace.user.guest) && <a
+      className="workspace-login" href={apiUrl('/auth/google/start')}
+      aria-disabled={disabled || undefined} tabIndex={disabled ? -1 : undefined}
+      onClick={event=>{if(disabled)event.preventDefault();}}
+    ><LogIn size={16} aria-hidden="true"/><span>Google 로그인</span></a>}
   </nav>;
 }
