@@ -205,7 +205,13 @@ export function Chat() {
     if (rect) setMode(modes[Math.max(0, Math.min(2, Math.floor((x - rect.left) / (rect.width / 3))))].id);
   }
   return <MotionConfig reducedMotion="user"><main ref={root} className={`app mode-${mode} ${messages.length ? 'has-messages' : ''}`}>
-    <LearningHeader studentContent={<StudyStudio studio={studio} disabled={disabled} guest={workspace.user?.guest ?? true} onCoach={async () => {
+    <LearningHeader onHome={() => {
+      if (disabled) return;
+      output.stop(); speech.dismiss(); workspace.newConversation();
+      setInput(''); setPendingVoice(null); setPendingAttachmentSend(null); setLearningContext(null); setRequestError('');
+      setLearningView({ open: false, topicId: null });
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }} studentContent={<StudyStudio studio={studio} disabled={disabled} guest={workspace.user?.guest ?? true} onCoach={async () => {
       const id = await studio.conversation();
       if (!id) return;
       output.stop(); setPendingVoice(null);

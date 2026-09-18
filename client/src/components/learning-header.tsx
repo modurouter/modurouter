@@ -54,7 +54,8 @@ function BrandRibbon() {
 
 const topicIcons = [MessageCircle, Smartphone, Coffee, ShieldCheck, FileText, Sprout];
 
-export function LearningHeader({ onChoose, disabled = false, view, onViewChange, mode, progress, onPracticeChoice, onRestart, onClear, ready, navigation, studentContent }: {
+export function LearningHeader({ onChoose, onHome, disabled = false, view, onViewChange, mode, progress, onPracticeChoice, onRestart, onClear, ready, navigation, studentContent }: {
+  onHome: () => void;
   onChoose: (prompt: string, label: string) => void; disabled?: boolean; view: LearningView; onViewChange: (view: LearningView) => void;
   mode: Mode; progress: Practice; onPracticeChoice: (index: number) => void; onRestart: () => void; onClear: () => void; ready: boolean; navigation?: ReactNode; studentContent?: ReactNode;
 }) {
@@ -106,7 +107,7 @@ export function LearningHeader({ onChoose, disabled = false, view, onViewChange,
   return <Collapsible.Root open={open} onOpenChange={setOpen} className="learning-header">
     <header className="site-header">
       <div ref={header} className="header-controls">
-      <span className="wordmark">modurouter</span>
+      <button type="button" className="wordmark" onClick={onHome} disabled={disabled} aria-label="modurouter 새 대화로 돌아가기">modurouter</button>
       {navigation}
       <div className="header-ribbon-slot" aria-hidden="true" />
       <Collapsible.Trigger className="learning-trigger glass">

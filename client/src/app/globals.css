@@ -11,7 +11,7 @@ button:disabled { cursor: default; }
 :focus, :focus-visible { outline: none; }
 .app { position: relative; display: flex; flex-direction: column; min-height: 100dvh; --controls-bottom: max(24px, env(safe-area-inset-bottom)); --control-size: 104px; --control-gap: 16px; --input-size: 20px; --input-line: 30px; isolation: isolate; }
 header { flex-shrink: 0; padding: 38px 48px; }
-.wordmark { font-size: 25px; font-weight: 620; letter-spacing: -1.1px; user-select: none; }
+.wordmark { font-size: 25px; font-weight: 620; letter-spacing: -1.1px; user-select: none; border: 0; padding: 0; color: inherit; text-align: left; }
 .workspace { display: flex; flex: 1; flex-direction: column; width: min(790px, calc(100% - 64px)); margin: 0 auto; padding-bottom: var(--controls-bottom); }
 .controls { position: relative; flex-shrink: 0; margin-top: auto; width: 100%; }
 .input-row { display: flex; align-items: flex-end; gap: 16px; }
