@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     output_price_cap_usd_per_m: Decimal = Field(default=Decimal("0"), ge=0)
     user_daily_budget_usd: Decimal = Field(default=Decimal("0"), ge=0)
     user_daily_request_limit: int = Field(default=30, ge=1)
+    guest_daily_request_limit: int = Field(default=100, ge=1)
     max_output_tokens: int = Field(default=1024, ge=1, le=8192)
     max_input_tokens: int = Field(default=16384, ge=512, le=32768)
     max_model_calls_per_run: int = Field(default=3, ge=1, le=3)

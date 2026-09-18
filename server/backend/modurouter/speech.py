@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .auth import current_user
-from .billing import admission_lock, buckets, quota_day
+from .billing import admission_lock, buckets, daily_request_limit, quota_day
 from .config import get_settings
 from .db import Session, get_db
 from .errors import AppError
@@ -98,7 +98,7 @@ async def transcribe(request: Request, user: User = Depends(current_user), db: A
             raise AppError("BUDGET_REVIEW_REQUIRED", "사용 상태를 확인한 뒤 다시 시도해 주세요.", 429)
         day = quota_day()
         rows = await buckets(db, user_id, day, settings)
-        if any(r.scope != "platform" and r.request_count >= settings.user_daily_request_limit for r in rows):
+        if any(r.scope != "platform" and r.request_count >= daily_request_limit(user, settings) for r in rows):
             raise AppError("REQUEST_LIMIT", "오늘의 사용 횟수에 도달했어요.", 429)
         if any(r.limit_usd is not None and r.spent_usd + r.reserved_usd + RESERVATION > r.limit_usd for r in rows):
             raise AppError("BUDGET_EXCEEDED", "오늘의 사용 한도에 도달했어요.", 429)

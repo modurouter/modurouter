@@ -14,7 +14,7 @@ function setup(fetcher, settings={loaded:false}) {
   const fetch = async (url, init={}) => { calls.push({url,init}); return fetcher(url,init); };
   const api=load('src/lib/api.ts',{fetch});
   const state={messages:[],streaming:false,add(m){this.messages.push(m)},patch(id,p){Object.assign(this.messages.find(m=>m.id===id),p)},setStreaming(v){this.streaming=v}};
-  const hook=load('src/lib/use-chat-api.ts',{fetch,require(name){if(name==='react')return {useRef:v=>({current:v}),useEffect:()=>{}};if(name==='./api')return api;if(name==='./model-settings')return {useModelSettings:{getState:()=>settings},effortOptions:[{id:'minimal'},{id:'low'}]};if(name==='./chat-store')return {useChatStore:{getState:()=>state}};throw Error(name);}}).useChatApi();
+  const hook=load('src/lib/use-chat-api.ts',{fetch,require(name){if(name==='./learning-journeys')return load('src/lib/learning-journeys.ts');if(name==='react')return {useRef:v=>({current:v}),useEffect:()=>{}};if(name==='./api')return api;if(name==='./model-settings')return {useModelSettings:{getState:()=>settings},effortOptions:[{id:'minimal'},{id:'low'}]};if(name==='./chat-store')return {useChatStore:{getState:()=>state}};throw Error(name);}}).useChatApi();
   return {calls,state,hook};
 }
 const result=(status='completed')=>({run_id:'run-1',status,response:'5입니다.',sources:[],selected_model:'test/model',providers:['test']});
@@ -85,3 +85,35 @@ for (const [name, origin, env, status] of [
   assert.equal(response.status,status);assert.equal(calls,status===200?1:0);
  });
 }
+
+test('attachments share the prepared conversation and are sent with follow-up questions',async()=>{
+ const {hook,state,calls}=setup(url=>common(url)||(url.endsWith('/runs')?Response.json(result()):Response.json(result())));
+ const [first,second]=await Promise.all([hook.prepareConversation(),hook.prepareConversation()]);
+ assert.equal(first.id,second.id);
+ const files=[{id:'file-1',filename:'안내문.pdf',status:'ready',truncated:false,expires_at:'2099-01-01'}];
+ await hook.send('요약해 줘','senior',files);
+ await hook.send('준비물은?','senior',files);
+ assert.equal(calls.filter(c=>c.url.endsWith('/v1/conversations')).length,1);
+ for(const call of calls.filter(c=>c.url.endsWith('/runs'))) assert.deepEqual(JSON.parse(call.init.body).attachment_ids,['file-1']);
+ assert.equal(state.messages[0].attachments[0].id,'file-1');
+ assert.equal(state.messages[2].attachments[0].id,'file-1');
+});
+
+test('attachment proxy preserves multipart bytes and boundary',async()=>{
+ const bytes=new Uint8Array([45,45,120,13,10,0,255,128,13,10,45,45,120,45,45]).buffer;
+ let received;
+ const route=load('src/app/api/backend/[...path]/route.ts',{process:{env:{API_UPSTREAM_URL:'https://backend.test',BACKEND_WEB_ORIGIN:'https://app.test'}},fetch:async(url,init)=>{received=init;return Response.json({id:'abc'})},require:()=>({})});
+ const req={method:'POST',headers:new Headers({origin:'http://localhost:3107','content-type':'multipart/form-data; boundary=x','x-csrf-token':'token'}),cookies:{get:()=>({value:'session'})},nextUrl:new URL('http://localhost:3107/api/backend/v1/attachments'),signal:new AbortController().signal,arrayBuffer:async()=>bytes,text:()=>{throw Error('Binary body must not decode as text')}};
+ assert.equal((await route.POST(req,{params:Promise.resolve({path:['v1','attachments']})})).status,200);
+ assert.equal(received.body,bytes);
+ assert.equal(received.headers.get('content-type'),'multipart/form-data; boundary=x');
+ assert.equal(received.headers.get('x-csrf-token'),'token');
+});
+
+test('mode guidance and activity context reach API while the visible question stays short',async()=>{
+ const {hook,state,calls}=setup(url=>common(url)||Response.json(result()));
+ await hook.send('내 문제로 복습','student',[],'풀이를 확인하고 힌트를 주세요.');
+ const body=JSON.parse(calls.find(c=>c.url.endsWith('/runs')).init.body);
+ assert.equal(state.messages[0].content,'내 문제로 복습');
+ assert.match(body.message,/자기주도 학습 코치/);assert.match(body.message,/풀이를 확인하고 힌트/);
+});
