@@ -258,7 +258,7 @@ export default function Home() {
       }else throw new Error('응답 연결이 끊겼습니다. 같은 질문을 다시 보내 저장 여부를 확인해 주세요.');
       retry.current=null;await refresh();
     } catch(e) {
-      if(e instanceof Error && e.name==='AbortError')setStatus('답변 연결을 중단했습니다.');else handleError(e);
+      if(e instanceof Error && e.name==='AbortError')setStatus('답변 연결을 중단했습니다.');else{setStatus('');handleError(e)}
       if(!runId&&!(e instanceof ApiError&&e.status===401)){setDraft(question);setMessages(ms=>ms.filter(m=>m.id!=='pending'&&m.id!==optimisticKey))}
       if(runId&&!(e instanceof ApiError&&e.status===401)){try{const completed=await followRun(runId,abort.signal);retry.current=null;setError('');if(completed.status==='failed'||completed.status==='interrupted')setDraft(question);else setAttachments([]);setMessages(ms=>ms.map(m=>m.id==='pending'?{...m,id:runId!}:m));await refresh()}catch{setError('연결이 끊겼습니다. 대화를 다시 열어 저장된 답변을 확인해 주세요.')}}
     } finally {operation.current=false;setBusy(false);controller.current=null;activeRun.current=null;input.current?.focus()}
