@@ -218,16 +218,51 @@ button,input,select,textarea {font:inherit}
 .chat-header {display:flex;justify-content:space-between;align-items:center;gap:16px}
 .workspace-nav,.workspace-nav>button,.workspace-nav>button+button {display:flex;align-items:center;gap:12px}
 .workspace-nav button,.workspace-popup button,.composer-tools button,.chat-attachments button {display:inline-flex;align-items:center;gap:6px;background:transparent;border:0;color:var(--muted);padding:8px;font-size:13px}
-.workspace-positioner {z-index:30;max-width:calc(100vw - 32px)}
-.workspace-popup {width:360px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 100px);overflow:auto;padding:20px;background:#fcfdff;border:1px solid #dfe2e8;box-shadow:0 8px 24px #253b551c}
-.workspace-popup-heading {display:flex;justify-content:space-between;align-items:center;font-size:16px}
-.conversation-list {margin-top:12px;max-height:280px;overflow:auto}
-.conversation-list>div {display:flex;align-items:center;border-bottom:1px solid #e7e9ee}
-.conversation-list>div>button:first-child {flex:1;min-width:0;display:block;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.conversation-list [data-active=true] {background:#f0f2f6}
-.account-summary {border-top:1px solid #dfe2e8;margin-top:20px;padding-top:16px;font-size:13px;line-height:1.8;display:flex;flex-direction:column;gap:8px}
-.account-summary p {margin:0}.account-summary a {color:inherit;text-decoration:underline}
-.account-delete {display:flex;align-items:center;justify-content:space-between}
+.workspace-positioner {z-index:30;max-width:min(var(--available-width),calc(100vw - 32px))}
+.workspace-popup {width:384px;max-width:100%;max-height:min(var(--available-height),calc(100dvh - 32px));overflow:auto;overscroll-behavior:contain;background:#fff;border:1px solid #dfe2e8;box-shadow:var(--peer-shadow-popup);transform-origin:var(--transform-origin);transition:opacity 100ms ease-out,transform 100ms ease-out}
+.workspace-popup[data-starting-style],.workspace-popup[data-ending-style] {opacity:0;transform:translateY(-4px) scale(.98)}
+.workspace-popup button,.workspace-popup a {transition:background 100ms ease-out,color 100ms ease-out}
+.workspace-popup button:disabled {opacity:.45}
+.workspace-popup :focus-visible {outline-offset:-2px}
+.workspace-popup-heading {display:flex;justify-content:space-between;align-items:center;padding:20px 20px 12px;gap:16px}
+.workspace-popup-heading h2 {margin:0;font-size:16px;font-weight:700;line-height:24px}
+.workspace-popup-heading button {justify-content:center;width:36px;height:36px;padding:0}
+.conversation-list {padding:0 12px 12px;max-height:clamp(88px,calc(var(--available-height) - 368px),320px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#d2d6de transparent}
+.conversation-row {display:flex;align-items:center;min-width:0;transition:background 100ms ease-out}
+.workspace-popup .conversation-open {flex:1;min-width:0;gap:12px;min-height:44px;padding:12px;color:var(--ink);font-size:14px;text-align:left}
+.conversation-open svg {flex-shrink:0;color:var(--muted)}
+.conversation-open span {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conversation-open .conversation-current {margin-left:auto;color:var(--ink)}
+.conversation-row[data-active=true] {background:#f0f2f6}
+.conversation-row[data-active=true] .conversation-open {font-weight:700}
+.workspace-popup .delete-trigger {flex-shrink:0;justify-content:center;width:36px;min-height:36px;padding:8px;color:var(--muted)}
+.conversation-empty {display:flex;flex-direction:column;align-items:center;gap:8px;padding:32px 12px;text-align:center;color:var(--muted)}
+.conversation-empty p {margin:4px 0 0;font-size:14px;color:var(--ink)}
+.conversation-empty span {font-size:12px;line-height:20px}
+.workspace-popup .conversation-more {justify-content:center;width:100%;min-height:40px;margin-top:8px;font-size:12px}
+.account-summary {border-top:1px solid #e7e9ee;padding:20px;background:#f8f9fb;font-size:13px;line-height:20px}
+.account-summary p {margin:0}
+.account-identity {display:flex;align-items:center;gap:12px;min-width:0}
+.account-avatar {display:grid;place-items:center;flex-shrink:0;width:40px;height:40px;border-radius:50%;background:#e9ecf1;color:#586171}
+.account-identity>div {min-width:0}
+.account-name {font-size:14px;font-weight:700;overflow-wrap:anywhere}
+.account-kind {font-size:12px;color:var(--muted)}
+.account-usage {display:grid;gap:8px;margin:20px 0}
+.account-usage>div {display:flex;justify-content:space-between;gap:16px}
+.account-usage dt {color:var(--muted)}
+.account-usage dd {margin:0;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.account-actions {display:flex;flex-wrap:wrap;gap:4px 8px;margin:12px -8px 0}
+.account-actions:empty {display:none}
+.account-actions a,.account-actions button {display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:8px;color:var(--ink);font-size:13px;text-decoration:none}
+.account-delete {margin-top:12px;padding-top:12px;border-top:1px solid #e4e7ed}
+.workspace-popup .delete-trigger-labeled {justify-content:flex-start;gap:8px;width:auto;max-width:100%;margin-left:-8px;font-size:12px}
+.account-summary [role=alert] {margin-top:12px;color:#a32727}
+@media(hover:hover){
+  .workspace-popup-heading button:hover,.conversation-row:hover,.workspace-popup .conversation-more:hover,.account-actions a:hover,.account-actions button:not(:disabled):hover {background:#eceff3}
+  .workspace-popup .delete-trigger:not(:disabled):hover {background:#faeeee;color:#a32727}
+}
+.workspace-popup button:not(:disabled):active,.account-actions a:active {background:#e4e7ed}
+@media(pointer:coarse){.workspace-popup .delete-trigger,.workspace-popup-heading button,.account-actions a,.account-actions button{min-height:44px}.workspace-popup .delete-trigger:not(.delete-trigger-labeled){width:44px}}
 .composer-tools {display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px}
 .search-mode {display:inline-flex;align-items:center;gap:6px;padding:8px;color:var(--muted)}
 .search-mode select {border:0;background:transparent;color:inherit;font:inherit;font-size:13px;max-width:150px}
@@ -246,7 +281,9 @@ button,input,select,textarea {font:inherit}
 @media(max-width:600px){.chat-header{padding:24px 18px;gap:8px}.workspace-nav{gap:4px}.workspace-nav button{font-size:12px;padding:6px}.composer-tools{gap:4px}.composer-tools>span{width:100%;margin-left:8px}.composer-tools button{font-size:12px}.account-summary{font-size:14px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:.01ms!important}}
 .activity-trigger {flex-wrap:wrap;max-width:100%}.active-model {font-size:11px;overflow-wrap:anywhere;color:var(--muted);font-weight:400}
-.composer textarea:focus-visible {outline:2px solid var(--ink);outline-offset:4px}
+.composer textarea:focus-visible {outline:none}
+.composer:has(textarea:focus-visible) {outline:2px solid #a3acb9;outline-offset:3px}
+@media(forced-colors:active){.composer:has(textarea:focus-visible){outline-color:Highlight}}
 
 .workspace-login {display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;white-space:nowrap;padding:8px 12px;border:1px solid #dfe2e8;border-radius:12px;background:#fff;color:var(--ink);text-decoration:none;font-size:13px;font-weight:500}
 .workspace-login:hover {background:#f3f5f8;border-color:#bac1cc}
