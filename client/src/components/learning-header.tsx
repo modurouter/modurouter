@@ -66,13 +66,32 @@ export function LearningHeader({ onChoose, disabled = false, view, onViewChange,
   const topic = topics.find(item => item.id === topicId);
   const step = practiceSteps[mode][progress.step];
   const heading = useRef<HTMLHeadingElement>(null);
-  const header = useRef<HTMLElement>(null);
+  const header = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const element = header.current;
     if (!element) return;
-    const measure = () => element.parentElement?.style.setProperty('--site-header-height', `${element.getBoundingClientRect().height}px`);
+    const host = element.parentElement;
+    const slot = element.querySelector<HTMLElement>('.header-ribbon-slot');
+    const ribbon = host?.querySelector<HTMLElement>('.brand-ribbon');
+    if (!host || !slot || !ribbon) return;
+    const measure = () => {
+      const bounds = slot.getBoundingClientRect();
+      const values = {
+        '--site-header-height': element.getBoundingClientRect().height,
+        '--ribbon-top': bounds.top,
+        '--ribbon-left': bounds.left,
+        '--ribbon-width': bounds.width,
+        '--ribbon-height': ribbon.getBoundingClientRect().height,
+      };
+      for (const [property, value] of Object.entries(values)) {
+        const pixels = `${value}px`;
+        if (host.style.getPropertyValue(property) !== pixels) host.style.setProperty(property, pixels);
+      }
+    };
     const observer = new ResizeObserver(measure);
     observer.observe(element);
+    observer.observe(slot);
+    observer.observe(ribbon);
     measure();
     return () => observer.disconnect();
   }, []);
@@ -85,14 +104,17 @@ export function LearningHeader({ onChoose, disabled = false, view, onViewChange,
   useEffect(() => { if (open) heading.current?.focus({ preventScroll: true }); }, [topicId, open, view.practice, progress.step, mode]);
   const choose = (prompt: string, label: string) => { if (!disabled) { onChoose(learningPrompt(prompt), label); setOpen(false); } };
   return <Collapsible.Root open={open} onOpenChange={setOpen} className="learning-header">
-    <header ref={header} className="site-header">
+    <header className="site-header">
+      <div ref={header} className="header-controls">
       <span className="wordmark">modurouter</span>
       {navigation}
-      <BrandRibbon />
+      <div className="header-ribbon-slot" aria-hidden="true" />
       <Collapsible.Trigger className="learning-trigger glass">
         <GlassSurface radius={24} />
         <BookOpen size={18} /><span>{space.title}</span><ChevronDown className={open ? 'is-open' : ''} size={15} />
       </Collapsible.Trigger>
+      </div>
+      <BrandRibbon />
     </header>
     <Collapsible.Panel className="learning-panel">
       {mode === 'student' ? studentContent : <>

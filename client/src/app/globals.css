@@ -294,8 +294,13 @@ button,input,select,textarea {font:inherit}
 @media(max-width:360px){.chat-header .wordmark{font-size:20px}.workspace-nav{gap:2px}.workspace-login{gap:4px;padding:7px}}
 
 /* Quiet event and learning identities; motion is handled by Motion. */
-.learning-header { flex-shrink: 0; padding-top: var(--site-header-height, 140px); padding-bottom: 24px; }
-.site-header { position: fixed; z-index: 25; inset: 0 0 auto; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 32px; padding: 20px 48px 20px; background: #fcfdfff2; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.learning-header { flex-shrink: 0; padding-bottom: 24px; }
+.site-header { position: relative; height: var(--site-header-height, 140px); padding: 0; }
+.header-controls { position: fixed; z-index: 25; inset: 0 0 auto; pointer-events: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 32px; padding: 20px 48px 20px; }
+.header-controls > .wordmark, .header-controls > .workspace-nav, .header-controls > .learning-trigger { pointer-events: auto; }
+.header-controls > .wordmark, .header-controls > .workspace-nav { background: #fcfdffe6; border-radius: 12px; box-shadow: 0 0 0 6px #fcfdffe6; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.header-ribbon-slot { height: var(--ribbon-height, 42px); width: 100%; max-width: 720px; min-width: 0; margin: 0 auto; }
+.site-header > .brand-ribbon { position: absolute; top: var(--ribbon-top, 48px); left: var(--ribbon-left, 25%); width: var(--ribbon-width, 50%); }
 .learning-trigger { position: relative; isolation: isolate; display: inline-flex; align-items: center; gap: 10px; padding: 14px 19px; border-radius: 24px; color: #4a4538; font-size: 14px; font-weight: 550; white-space: nowrap; }
 .learning-trigger > svg, .learning-trigger > span { position: relative; z-index: 1; }
 .learning-trigger > svg:first-of-type { color: #a87905; }
@@ -342,7 +347,7 @@ button,input,select,textarea {font:inherit}
 .mode-senior .learning-option span { font-size: 14px; }
 .mode-child .learning-option strong { font-size: 16px; }
 @media (max-width: 600px) {
-  .site-header { grid-template-columns: auto minmax(0, 1fr); padding: 16px 20px 15px; gap: 14px 22px; }
+  .header-controls { grid-template-columns: auto minmax(0, 1fr); padding: 16px 20px 15px; gap: 14px 22px; }
   .learning-trigger { grid-column: 1 / -1; justify-self: end; }
   .site-header .wordmark { font-size: 21px; }
   .learning-trigger { padding: 12px 13px; gap: 7px; font-size: 12px; }
@@ -363,7 +368,7 @@ button,input,select,textarea {font:inherit}
   .learning-option .lesson-arrow { top: 25px; }
 }
 @media (max-width: 360px) {
-  .site-header { padding-inline: 18px; }
+  .header-controls { padding-inline: 18px; }
   .site-header .wordmark { font-size: 19px; }
   .learning-trigger { padding-inline: 10px; }
   .learning-trigger > svg:first-of-type { display: none; }
@@ -459,13 +464,13 @@ button,input,select,textarea {font:inherit}
 @media(max-width:600px) { .practice-card { padding: 21px 18px; }.practice-feature { padding: 19px; }.practice-choices { grid-template-columns: 1fr; }.mode-senior .practice-content h2 { font-size: 24px; }.mode-senior .practice-content p, .mode-senior .practice-choices button { font-size: 18px; } }
 
 /* Keep account controls beside the PR learning header at every viewport. */
-.site-header {grid-template-columns:auto minmax(0,1fr) auto;gap:14px 24px}
-.site-header>.wordmark {grid-column:1;grid-row:1}
-.site-header>.workspace-nav {grid-column:3;grid-row:1}
-.site-header>.brand-ribbon {grid-column:2;grid-row:1 / 3}
-.site-header>.learning-trigger {grid-column:3;grid-row:2;justify-self:end}
-@media(max-width:900px){.site-header{grid-template-columns:auto minmax(0,1fr);padding:16px 20px 16px;gap:12px}.site-header>.workspace-nav{grid-column:2;justify-self:end}.site-header>.brand-ribbon{grid-column:1 / -1;grid-row:2}.site-header>.learning-trigger{grid-column:1 / -1;grid-row:3}.site-header .workspace-nav>button>span{display:none}}
-@media(max-width:360px){.site-header{padding-inline:18px;column-gap:8px}.site-header .wordmark{font-size:19px}}
+.header-controls {grid-template-columns:auto minmax(0,1fr) auto;gap:14px 24px}
+.header-controls>.wordmark {grid-column:1;grid-row:1}
+.header-controls>.workspace-nav {grid-column:3;grid-row:1}
+.header-controls>.header-ribbon-slot {grid-column:2;grid-row:1 / 3}
+.header-controls>.learning-trigger {grid-column:3;grid-row:2;justify-self:end}
+@media(max-width:900px){.header-controls{grid-template-columns:auto minmax(0,1fr);padding:16px 20px 16px;gap:12px}.header-controls>.workspace-nav{grid-column:2;justify-self:end}.header-controls>.header-ribbon-slot{grid-column:1 / -1;grid-row:2}.header-controls>.learning-trigger{grid-column:1 / -1;grid-row:3}.site-header .workspace-nav>button>span{display:none}}
+@media(max-width:360px){.header-controls{padding-inline:18px;column-gap:8px}.site-header .wordmark{font-size:19px}}
 
 /* Focus is expressed with surface contrast, never a ring. */
 :focus, :focus-visible { outline: none; }
