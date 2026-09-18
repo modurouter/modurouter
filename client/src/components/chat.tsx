@@ -34,6 +34,7 @@ export function Chat() {
   const [learningContext, setLearningContext] = useState<{ mode: typeof mode; prompt: string; label: string } | null>(null);
   useEffect(() => { setLearningView(v => ({ open: v.open, topicId: null, practice: false })); setLearningContext(null); }, [mode]);
   const [pendingVoice, setPendingVoice] = useState<string | null>(null);
+  const [pendingAttachmentSend, setPendingAttachmentSend] = useState<{ input: string; mode: typeof mode; conversationId: string | null; files: string } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const chatApi = useChatApi();
@@ -94,7 +95,25 @@ export function Chat() {
   });
   const recording = speech.recording;
   const disabled = streaming || workspace.busy || recording || speech.processing || (mode === 'student' && learningView.open && studio.busy);
-  const hasContent = Boolean(input.trim() || attachments.ready.length);
+  const hasContent = Boolean(input.trim() || attachments.selected.length);
+  const attachmentIds = attachments.selected.map(file => file.id).join(',');
+  useEffect(() => {
+    if (!pendingAttachmentSend) return;
+    if (pendingAttachmentSend.input !== input || pendingAttachmentSend.mode !== mode || pendingAttachmentSend.conversationId !== workspace.conversationId || pendingAttachmentSend.files !== attachmentIds) {
+      setPendingAttachmentSend(null);
+      return;
+    }
+    if (attachments.failed.length) {
+      setPendingAttachmentSend(null);
+      setRequestError('읽지 못한 첨부파일이 있어요. 파일 안내를 확인한 뒤 다시 첨부하거나 제외해 주세요.');
+      return;
+    }
+    if (disabled || attachments.blocked) return;
+    setPendingAttachmentSend(null);
+    send();
+    // The queued draft belongs to this exact mode, conversation, text and file selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAttachmentSend, input, mode, workspace.conversationId, attachmentIds, attachments.blocked, attachments.failed.length, disabled]);
   useEffect(() => {
     if (!pendingVoice) return;
     if (disabled) return;
@@ -149,12 +168,23 @@ export function Chat() {
     try { await workspace.cancelRecovery(); await chatApi.stop(); } catch (error) { setRequestError(error instanceof Error ? error.message : '중지 요청에 실패했어요.'); }
   }
   function send(retryText?: string, retryFiles?: Attachment[], clearDraft = retryText === undefined, context = learningContext?.mode === mode ? learningContext.prompt : '') {
+    if (disabled || useChatStore.getState().streaming) return;
+    if (clearDraft && retryFiles === undefined && attachments.blocked) {
+      if (attachments.failed.length) {
+        setRequestError('읽지 못한 첨부파일이 있어요. 파일 안내를 확인한 뒤 다시 첨부하거나 제외해 주세요.');
+      } else {
+        setRequestError('');
+        setPendingAttachmentSend({ input, mode, conversationId: workspace.conversationId, files: attachmentIds });
+      }
+      return;
+    }
     const files = retryFiles ?? attachments.ready;
     const typedText = (retryText ?? input).trim();
     const text = typedText || (files.length ? '첨부한 자료의 내용을 확인하고 핵심을 정리해 주세요.' : '');
-    if (!text || disabled || useChatStore.getState().streaming || (clearDraft && retryFiles === undefined && attachments.blocked)) return;
-    if (retryText === undefined && typedText && mode === 'student' && learningView.open) { studio.voice(text); setInput(''); return; }
-    if (retryText === undefined && typedText && learningView.open && learningView.practice) {
+    if (!text) return;
+    setPendingAttachmentSend(null);
+    if (retryText === undefined && typedText && !files.length && mode === 'student' && learningView.open) { studio.voice(text); setInput(''); return; }
+    if (retryText === undefined && typedText && !files.length && learningView.open && learningView.practice) {
       const index = practiceVoiceIndex(mode, learning.progress[mode], text);
       if (index !== null) { learning.choose(mode, index); setInput(''); return; }
       setRequestError('선택지 이름을 입력해 주세요.'); return;
@@ -208,6 +238,8 @@ export function Chat() {
         {workspace.busy && <p className="workspace-status" role="status">대화와 자료를 확인하고 있어요.</p>}
         {pendingVoice && streaming && <p className="request-error" role="status">답변이 끝나면 이어서 전송할게요.<button type="button" onClick={() => setPendingVoice(null)}>전송 취소</button></p>}
         {requestError && <p className="request-error" role="alert">{requestError}</p>}
+        {pendingAttachmentSend && <p className="request-error" role="status">첨부파일을 읽고 있어요. 준비되면 자동으로 전송할게요.<button type="button" onClick={() => setPendingAttachmentSend(null)}>전송 취소</button></p>}
+        {!!attachments.failed.length && <p className="attachment-error"><button type="button" disabled={disabled} onClick={() => { attachments.failed.forEach(file => attachments.toggle(file.id)); setRequestError(''); }}>읽지 못한 파일 제외</button></p>}
         <AnimatePresence>{speech.notice && <motion.div className="voice-panel glass" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} role="status">
           <div className="voice-wave" aria-hidden="true">{[12, 24, 17, 32, 20, 28, 14].map((height, i) => <span key={i} style={{ height, animationDelay: `${i * .1}s` }} />)}</div>
           <p>{speech.notice}</p>
@@ -222,7 +254,7 @@ export function Chat() {
             {attachments.error && <p className="attachment-error" role="alert">{attachments.error}<button type="button" onClick={attachments.clearError} aria-label="첨부 안내 닫기"><X size={14} /></button></p>}
             <div className="composer-entry">
             <textarea ref={textarea} aria-label="메시지 입력" placeholder={attachments.ready.length ? '질문을 입력하거나 바로 전송해 자료를 요약해 보세요' : currentMode.placeholder} value={input} readOnly={recording || speech.processing || workspace.busy || (mode === 'student' && learningView.open && studio.busy)} rows={1} maxLength={12000} onChange={(e) => { setPendingVoice(null); setInput(e.target.value); }} />
-            <motion.button whileTap={{ scale: .92 }} className={`send-button ${hasContent || streaming ? 'is-ready' : ''}`} type={streaming ? 'button' : 'submit'} onClick={streaming ? () => stop() : undefined} disabled={!streaming && (!hasContent || disabled || attachments.blocked)} aria-label={streaming ? '응답 중지' : '메시지 전송'}>{streaming ? <Square size={17} fill="currentColor" /> : <ArrowUp size={29} strokeWidth={1.7} />}</motion.button>
+            <motion.button whileTap={{ scale: .92 }} className={`send-button ${hasContent || streaming ? 'is-ready' : ''}`} type={streaming ? 'button' : 'submit'} onClick={streaming ? () => stop() : undefined} disabled={!streaming && (!hasContent || disabled)} aria-label={streaming ? '응답 중지' : '메시지 전송'}>{streaming ? <Square size={17} fill="currentColor" /> : <ArrowUp size={29} strokeWidth={1.7} />}</motion.button>
             </div>
           </form>
           <motion.button className={`microphone glass ${recording ? 'is-recording' : ''}`} whileHover={{ scale: 1.045 }} whileTap={{ scale: .94 }} disabled={!recording && (streaming || workspace.busy || speech.processing)} onClick={() => { output.stop(); if (recording) speech.stop(); else { setPendingVoice(null); setRequestError(''); void speech.start(input); } }} aria-label={recording ? '녹음 종료 후 전송' : '음성 입력'} title="음성으로 입력하기 / 최대 10분" aria-pressed={recording}><GlassSurface radius={50} tone="accent" />{recording ? <Square size={21} strokeWidth={1.5} /> : <Mic size={27} strokeWidth={1.45} />}</motion.button>

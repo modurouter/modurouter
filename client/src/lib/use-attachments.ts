@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { attachmentExtensions, type Attachment } from './api';
+import { attachmentErrorMessage, attachmentExtensions, type Attachment } from './api';
 import { useChatStore } from './chat-store';
 import type { useChatWorkspace } from './use-chat-workspace';
 export const attachmentAccept = attachmentExtensions.join(',');
@@ -13,7 +13,7 @@ export function useAttachments(workspace: ReturnType<typeof useChatWorkspace>) {
   const known = new Map(messages.flatMap(message => message.attachments || []).map(file => [file.id, file]));
   for (const file of workspace.attachments) known.set(file.id, file);
   const selectedIds = new Set(workspace.attachments.map(file => file.id));
-  const files: DraftAttachment[] = [...known.values()].map(file => ({ ...file, localId: file.id, selected: selectedIds.has(file.id) }));
+  const files: DraftAttachment[] = [...known.values()].map(file => ({ ...file, localId: file.id, notice: attachmentErrorMessage(file) || undefined, selected: selectedIds.has(file.id) }));
   const selected = files.filter(file => file.selected);
   function toggle(id: string) {
     if (selectedIds.has(id)) { workspace.excludeAttachment(id); return; }
@@ -25,5 +25,7 @@ export function useAttachments(workspace: ReturnType<typeof useChatWorkspace>) {
   }
   return { files, selected, error, add: (incoming: File[]) => workspace.upload(incoming), toggle,
     accept: (workspace.config?.attachment_extensions || attachmentExtensions).join(','),
-    clearError: () => setError(''), blocked: selected.some(file => file.status !== 'ready'), ready: selected.filter(file => file.status === 'ready') };
+    clearError: () => setError(''), blocked: selected.some(file => file.status !== 'ready'),
+    failed: selected.filter(file => !['ready', 'uploading', 'queued', 'pending'].includes(file.status)),
+    ready: selected.filter(file => file.status === 'ready') };
 }

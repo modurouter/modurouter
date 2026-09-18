@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { Menu } from '@base-ui/react/menu';
 import { FileText, ImageIcon, Plus, X, ChevronDown, Check } from 'lucide-react';
 import type { Attachment, Source } from '@/lib/api';
-import { api } from '@/lib/api';
+import { api, attachmentErrorMessage } from '@/lib/api';
 import { type useAttachments } from '@/lib/use-attachments';
 import { GlassSurface } from './glass-surface';
 
@@ -13,7 +13,8 @@ export function AttachmentCard({ file, onRemove }: { file: Attachment & { notice
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const current = data && (data.status === 'expired' || data.status === 'failed' || file.status !== 'ready') ? data : file;
-  const status = current.status === 'ready' ? current.truncated ? '일부만 읽었어요' : '준비됐어요' : current.status === 'expired' ? '다시 첨부해 주세요' : current.status === 'failed' ? '읽지 못했어요' : current.status === 'uploading' ? '올리는 중…' : '읽는 중…';
+  const status = current.status === 'ready' ? current.truncated ? '일부만 읽었어요' : '준비됐어요' : current.status === 'expired' ? '다시 첨부해 주세요' : current.status === 'failed' ? '읽지 못했어요' : current.status === 'unavailable' ? '상태를 확인하지 못했어요' : current.status === 'uploading' ? '올리는 중…' : '읽는 중…';
+  const error = attachmentErrorMessage(current) || file.notice;
   async function open() {
     if (expanded) { setExpanded(false); return; }
     setExpanded(true);
@@ -31,7 +32,7 @@ export function AttachmentCard({ file, onRemove }: { file: Attachment & { notice
       </button>
       {onRemove && <button type="button" className="attachment-remove" onClick={onRemove} aria-label={`${file.filename} 다음 질문에서 제외`}><X size={15} /></button>}
     </div>
-    {file.notice && <p className="attachment-notice">{file.notice}</p>}
+    {error && <p className="attachment-notice" role="alert">{error}</p>}
     {expanded && <div className="attachment-preview">{loading ? '불러오는 중…' : notice || (current.status === 'ready' ? <><small>읽은 내용{current.truncated ? ' (일부)' : ''}</small><p>{current.preview || '표시할 내용이 없어요.'}</p></> : current.status === 'failed' ? '파일을 확인한 뒤 다시 첨부해 주세요.' : current.status === 'expired' ? '보관 기간이 지났어요. 다시 첨부해 주세요.' : '내용을 읽고 있어요.')}</div>}
   </div>;
 }
