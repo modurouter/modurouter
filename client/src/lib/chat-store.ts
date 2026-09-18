@@ -8,11 +8,21 @@ export const modes = [
 export type Mode = typeof modes[number]['id'];
 export type Activity = { startedAt: number; finishedAt?: number; status: 'writing' | 'complete' | 'stopped' | 'error'; stage?: string; events?: string[] };
 export type Message = { id: string; role: 'user' | 'assistant'; content: string; attachments?: Attachment[]; activity?: Activity; selectedModel?: string; selectedProvider?: string; runId?: string; run?: Run; sources?: Source[]; error?: string };
-type State = { conversationId: string | null; setConversationId: (id: string | null) => void; setMessages: (messages: Message[]) => void; mode: Mode; messages: Message[]; streaming: boolean; setMode: (mode: Mode) => void; add: (message: Message) => void; update: (id: string, content: string) => void; patch: (id: string, patch: Partial<Message>) => void; setStreaming: (value: boolean) => void };
+const modeStorageKey = 'modurouter-mode';
+type State = { conversationId: string | null; setConversationId: (id: string | null) => void; setMessages: (messages: Message[]) => void; mode: Mode; messages: Message[]; streaming: boolean; setMode: (mode: Mode) => void; restoreMode: () => void; add: (message: Message) => void; update: (id: string, content: string) => void; patch: (id: string, patch: Partial<Message>) => void; setStreaming: (value: boolean) => void };
 export const useChatStore = create<State>((set) => ({
   conversationId: null, setConversationId: conversationId => set({conversationId}), setMessages: messages => set({messages}),
   mode: 'student', messages: [], streaming: false,
-  setMode: (mode) => set({ mode }),
+  setMode: (mode) => {
+    set({ mode });
+    try { localStorage.setItem(modeStorageKey, mode); } catch { /* Keep the selection when storage is unavailable. */ }
+  },
+  restoreMode: () => {
+    try {
+      const saved = localStorage.getItem(modeStorageKey);
+      if (modes.some(mode => mode.id === saved)) set({ mode: saved as Mode });
+    } catch { /* Use the default when storage is unavailable. */ }
+  },
   add: (message) => set((s) => ({ messages: [...s.messages, message] })),
   update: (id, content) => set((s) => ({ messages: s.messages.map((m) => m.id === id ? { ...m, content } : m) })),
   patch: (id, patch) => set((s) => ({ messages: s.messages.map((m) => m.id === id ? { ...m, ...patch } : m) })),

@@ -28,6 +28,7 @@ import { StudyStudio } from './study-studio';
 
 export function Chat() {
   const { mode, setMode, messages, streaming } = useChatStore();
+  useEffect(() => { useChatStore.getState().restoreMode(); }, []);
   const [input, setInput] = useState('');
   const [learningView, setLearningView] = useState<LearningView>({ open: false, topicId: null });
   const learning = useLearningProgress();
