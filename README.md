@@ -1,70 +1,57 @@
+<div align="center">
+
 # modurouter
 
-한국어 대화를 위한 Next.js 클라이언트와 FastAPI 백엔드입니다. 글래스 채팅 UI에 최신 모델 라우팅과 음성 기능을 통합했습니다.
+**누구나 편하게 묻고, 자기 속도로 배우는 AI**
 
-## 실행과 검증
+일상의 궁금증부터 공부와 자료 정리까지, 한국어로 대화하며 해결해 보세요.
 
-설정과 API 키는 저장소 루트의 `.env`에서만 관리합니다. 파일 권한은 `600`으로 유지하며 셸에서 source로 실행하지 않습니다. 자세한 서버 설정은 [server/README.md](server/README.md)를 참고하세요.
+<a href="https://modurouter.today"><img src="https://img.shields.io/badge/modurouter.today-지금_시작하기-FCB603?style=for-the-badge&amp;labelColor=24262B" alt="modurouter.today에서 시작하기" /></a>
 
-```sh
-cd client
-npm ci
-npm run dev
-npm test
-npm run typecheck
-npm run build
-```
+[**modurouter.today 바로가기 ↗**](https://modurouter.today)
 
-개발 화면은 `http://localhost:3107`입니다. 저장소 루트의 `.ops/run.sh api`와 `.ops/run.sh worker`로 백엔드를 실행합니다. 서버 테스트는 `server/`에서 `uv run --frozen pytest -q`로 실행합니다.
+</div>
 
-## 통합 기능
+## 이렇게 사용해 보세요
 
-- 서버에 저장된 대화와 첨부파일 상태를 복원합니다. 새 대화와 기록 삭제를 지원합니다.
-- 자동 선택과 무료 전용 라우팅을 지원합니다. 직접 선택할 때는 모델과 제공처를 함께 지정합니다.
-- 관리자 정책에서 허용한 모델을 검색해 선택합니다. 지원하는 경로에만 낮은 사고 강도를 전달합니다.
-- PDF와 HWP/HWPX를 읽고 Word, Excel, PowerPoint의 최신 형식과 구형 형식을 처리합니다. Markdown과 HTML, CSV 등의 텍스트 자료와 PNG/JPG 이미지를 첨부하고 추출 결과를 확인할 수 있습니다.
-- 웹 검색은 기본적으로 질문에 따라 자동 실행하며 항상 검색하거나 끌 수도 있습니다. 질문에 넣은 공개 URL은 직접 읽고 출처를 표시합니다. 후속 질문은 같은 대화에서 제출한 첨부 문맥을 복원합니다.
-- `gpt-4o-mini-transcribe`로 최대 10분의 한국어 음성을 전사합니다. 녹음을 종료하면 준비된 첨부파일과 함께 전송합니다. 학습 화면에서는 음성으로 활동과 선택지를 고릅니다.
-- 답변 읽어주기는 브라우저의 한국어 음성을 사용합니다. 한국어 음성이 없으면 기기 설정 안내를 표시합니다.
-- 기존 Google 로그인과 관리자 설정을 유지합니다. 비로그인 사용자도 이용할 수 있습니다.
+1. [modurouter.today](https://modurouter.today)에 접속해 나에게 맞는 모드를 고르세요. 로그인 없이 시작하거나 Google 계정으로 로그인할 수 있어요.
+2. 궁금한 내용을 적고 **화살표 버튼**을 눌러 보내세요. `Enter`는 줄바꿈입니다.
+3. 자료가 있다면 **파일 첨부**로 함께 질문해 보세요. 말로 질문하려면 마이크를 누르고, 답변을 듣고 싶다면 **읽어주기**를 선택하세요.
 
-SSE 연결이 끊기면 저장된 실행 결과를 조회합니다. 실행 ID를 받기 전 연결 실패는 같은 요청 번호로 재시도하며 새 생성을 자동으로 시작하지 않습니다. 학생 모드는 일반 설명을 사용하고 노약자 모드와 어린이 모드는 쉬운 설명을 사용합니다.
+## 대화에 필요한 기능
 
-## 웹 자료와 문서 읽기
-
-서버가 웹 자료와 첨부파일을 먼저 텍스트로 추출해 답변 모델에 전달합니다. 따라서 이미지 입력이나 도구 호출을 지원하지 않는 텍스트 모델도 자료를 참고할 수 있습니다.
-
-웹 검색 자동 모드에서는 검색 요청이나 최신 정보가 필요한 표현을 감지합니다. 첨부파일이 있는 질문과 그 후속 질문은 명시적인 검색 요청이 있을 때 검색하며 질문에 쓴 URL은 검색 모드와 관계없이 먼저 읽습니다. 검색 판단과 검색어에는 사용자의 실제 질문만 사용하며 모드 안내와 학습 지침은 제외합니다. 자동 검색이 실패해도 일반 답변은 이어가고 최신 웹 정보를 확인하지 못했음을 알립니다. 항상 검색 모드나 직접 입력한 URL의 자료를 전혀 읽지 못한 경우에는 확인 실패를 알립니다. DuckDuckGo 검색 결과는 최대 5개를 수집하고 그중 최대 4개의 원문을 추가로 확인합니다. 다만 실행 시간과 도구 호출 한도 안에서 처리하므로 모든 검색 결과를 읽는 것은 아닙니다. 검색어로는 현재 질문의 앞 500자만 전송하며 첨부파일에서 추출한 본문을 덧붙이지 않습니다.
-
-| 자료 | 지원 범위 |
+| 기능 | 할 수 있는 일 |
 | --- | --- |
-| 웹 주소 | 공개 HTML과 텍스트, 지원하는 문서와 이미지의 직접 링크 |
-| PDF | 최대 20쪽의 텍스트 추출, 스캔 페이지의 한국어와 영어 OCR |
-| 한글 문서 | HWP 5와 HWPX의 본문, 표 안의 문단과 글상자, 각주 등의 텍스트 |
-| Word 문서 | DOCX와 DOC, ODT, RTF의 본문과 표. 지원되는 각주와 글상자, 머리말과 꼬리말도 추출 |
-| Excel 문서 | XLSX와 XLS의 시트 이름, 셀 좌표와 값. 수식과 결과 값의 처리 범위는 아래 설명 참고 |
-| PowerPoint 문서 | PPTX와 PPT의 슬라이드 순서, 텍스트와 표, 발표자 노트 |
-| Markdown | MD와 MARKDOWN 원문 |
-| HTML | HTML과 HTM의 저장된 텍스트와 표. 스크립트를 실행하거나 외부 자료를 불러오지 않음 |
-| 텍스트 파일 | TXT, JSON, XML 원문. CSV와 TSV는 행과 셀 좌표를 구분해 추출 |
-| 이미지 | PNG와 JPG의 한국어와 영어 OCR |
+| 내게 맞는 대화 | 노약자, 어린이, 학생 모드에 맞춰 글자 크기와 설명을 조정해요. |
+| 문서와 사진 질문 | PDF와 한글 문서, Office 파일이나 사진을 첨부해 내용을 물어보세요. 파일을 끌어 놓거나 붙여넣어도 돼요. |
+| 웹 검색 | 질문에 따라 검색하는 자동 모드를 기본으로 사용해요. 항상 검색하거나 검색을 끌 수도 있어요. |
+| 음성 대화 | 마이크로 질문하고 답변을 소리로 들어 보세요. |
+| 모델 선택 | 자동 선택을 사용하거나 무료 모델만 선택할 수 있어요. 직접 모델을 검색해 고르는 것도 가능해요. |
+| 대화 기록 | 이전 대화를 다시 열어 질문을 이어가세요. 필요 없는 기록은 삭제할 수 있어요. |
 
-파일당 최대 10 MiB이며 질문 하나에 최대 3개를 첨부할 수 있습니다. 추출한 텍스트는 자료당 최대 80,000자까지 보관합니다. 모델 입력 한도가 더 작으면 질문과 관련된 일부 내용을 전달하며 생략 여부를 표시합니다. 긴 문서 전체가 답변에 반영된다고 보장하지 않으므로 미리보기와 답변의 제한 안내를 확인하세요.
+## 나에게 맞는 학습 공간
 
-XLSX는 수식을 실행하지 않고 원문과 저장된 결과를 함께 읽습니다. 날짜와 표시 형식을 보존하며 단순 숫자 형식은 표시 값도 제공합니다. 저장된 수식 결과가 없거나 오래되었으면 원본 앱에서 재계산해 저장해야 합니다. XLS는 LibreOffice로 변환하는 과정에서 수식이 재계산될 수 있어 결과가 원본의 저장 값과 다를 수 있습니다.
+| 모드 | 학습 공간 | 함께할 활동 |
+| --- | --- | --- |
+| 노약자 모드 | 생활 배움터 | 일상에 필요한 디지털 활용을 차근차근 연습해요. |
+| 어린이 모드 | 호기심 교실 | 궁금한 것을 질문하고 쉬운 설명으로 배워요. |
+| 학생 모드 | 학습 스튜디오 | 오답을 복습하고 탐구와 발표를 준비해요. AI에 질문하는 방법도 익혀요. |
 
-문서의 원래 페이지 배치를 재현하지 않으며 삽입된 이미지와 차트의 시각 정보는 읽지 않습니다. HWP/HWPX와 Office 문서의 이미지가 필요하면 PDF나 PNG/JPG로 첨부하세요. OCR 결과는 원문과 대조해야 합니다. JavaScript 실행이 필요한 웹페이지는 지원하지 않습니다. 암호화나 DRM이 적용된 문서는 잠금을 해제한 파일을 사용해야 합니다. DOC와 XLS, PPT, ODT, RTF는 운영 서버의 LibreOffice로 변환하며 지원하지 않는 구형 버전이나 손상된 파일에는 다시 저장하는 방법을 안내합니다.
+학습 스튜디오에는 **9가지 활동**이 있어요. 예제와 힌트를 보며 답안을 작성하고, 저장한 활동은 나중에 이어서 진행하세요. 활동을 마치면 학습 노트를 내려받을 수 있고 **AI 코치**와 답안을 더 살펴볼 수도 있어요.
 
-## 모드별 학습 공간
+게스트의 대화와 학습 스튜디오 기록은 현재 브라우저 세션에 연결됩니다. 쿠키를 지우면 다시 불러올 수 없어요.
 
-생활 배움터와 호기심 교실은 기존 브라우저 실습을 제공합니다. 학습 스튜디오는 9개 활동의 자료와 과제, 오답 힌트를 제공하며 답안과 진행 상태를 서버에 저장합니다. 작성한 결과는 Markdown 노트로 내려받고 활동별 AI 코치 대화에서 이어서 검토할 수 있습니다. 게스트 기록은 현재 세션에 연결되며 로그인 계정끼리 기록이 섞이지 않습니다. 입력창 왼쪽 위의 파일 첨부 메뉴와 웹 검색 설정을 사용하며 붙여넣기와 드래그 앤 드롭도 지원합니다. Enter는 줄바꿈이고 화살표 버튼으로 전송합니다. 자세한 범위는 [모드별 학습 공간](docs/mode-learning.md)을 참고하세요.
+## 기술 스택
 
-## 운영 연결과 배포
-
-클라이언트는 기존 `/auth/*`와 `/v1/*` API를 사용합니다. `PRODUCTION_API_ORIGIN`이 웹 출처와 다르면 API에 직접 연결하고, 같으면 Next.js rewrites를 사용합니다. 쿠키와 CSRF 토큰을 유지합니다. 별도의 클라이언트 환경 파일이나 브라우저용 API 키를 만들지 않습니다.
-
-`.ops/deploy.sh all`이 서버와 웹을 배포합니다. 운영에 이미 적용한 음성 전사 마이그레이션 `0006`을 보존하고, `0007`에서 라우팅 필드를 추가한 뒤 `0008`에서 관리자 정책을 추가합니다. 학습 스튜디오에는 `0009`의 `learning_sessions` 테이블이 필요하며 서버 배포 시 `alembic upgrade head`로 적용합니다. 자세한 음성 제한과 비용 처리 방식은 [음성 기능 문서](server/docs/openai-stt.md)를 참고하세요.
-
-## 화면 구현
-
-Base UI의 접근성 구조를 사용하고 키보드 포커스를 표시합니다. `@liquid-dom/core`가 글래스 표면을 렌더링하며 WebGPU를 사용할 수 없으면 CSS 표면을 표시합니다. Zustand가 상태를 관리하고 Motion이 움직임을 처리합니다. Markdown은 Streamdown으로 표시합니다. 시스템 서체를 우선하고 한국어 대체 서체로 Pretendard를 제공합니다.
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js-000000?style=flat-square&amp;logo=nextdotjs&amp;logoColor=white" alt="Next.js" />
+  <img src="https://img.shields.io/badge/React-20232A?style=flat-square&amp;logo=react&amp;logoColor=61DAFB" alt="React" />
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-0F172A?style=flat-square&amp;logo=tailwindcss&amp;logoColor=38BDF8" alt="Tailwind CSS" />
+  <br />
+  <img src="https://img.shields.io/badge/Python-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&amp;logo=fastapi&amp;logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/MariaDB-003545?style=flat-square&amp;logo=mariadb&amp;logoColor=white" alt="MariaDB" />
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&amp;logo=docker&amp;logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/Vercel-000000?style=flat-square&amp;logo=vercel&amp;logoColor=white" alt="Vercel" />
+</p>
