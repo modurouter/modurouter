@@ -43,7 +43,7 @@ export function AttachmentMenu({ attachments, disabled, labeled = false }: { att
     <input hidden ref={fileInput} type="file" multiple accept={attachments.accept} onChange={e => { void attachments.add(Array.from(e.target.files || [])); e.target.value = ''; }} />
     <input hidden ref={photoInput} type="file" multiple accept="image/png,image/jpeg" onChange={e => { void attachments.add(Array.from(e.target.files || [])); e.target.value = ''; }} />
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger type="button" className={labeled ? "attachment-add attachment-add-labeled" : "attachment-add"} aria-label="파일 또는 사진 첨부" disabled={disabled}>{!labeled && <GlassSurface radius={50} tone="gray" />}<Plus size={18} />{labeled && <span>파일 첨부</span>}</Popover.Trigger>
+      <Popover.Trigger type="button" className={labeled ? "attachment-add attachment-add-labeled composer-tool" : "attachment-add"} aria-label="파일 또는 사진 첨부" disabled={disabled}><GlassSurface radius={labeled ? 18 : 50} tone={labeled ? 'neutral' : 'gray'} /><Plus size={18} />{labeled && <span>파일 첨부</span>}</Popover.Trigger>
       <Popover.Portal><Popover.Positioner side="top" align="start" sideOffset={14} collisionPadding={16} className="settings-positioner"><Popover.Popup className="attachment-menu glass">
         <Popover.Title className="sr-only">첨부하기</Popover.Title>
         <button type="button" onClick={() => { setOpen(false); fileInput.current?.click(); }}><FileText size={18} />파일 첨부</button>

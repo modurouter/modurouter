@@ -471,8 +471,14 @@ button,input,select,textarea {font:inherit}
 :focus, :focus-visible { outline: none; }
 button:focus-visible, a:focus-visible, select:focus-visible { background-color: var(--accent-hover); }
 .composer-tools { margin: 0 0 4px; padding-left: 8px; }
-.composer-tools .attachment-add-labeled { display: inline-flex; align-items: center; gap: 6px; width: auto; height: 32px; margin: 0; padding: 4px 6px; border-radius: 10px; background: transparent; box-shadow: none; font-size: 13px; color: var(--muted); }
-.composer-tools .attachment-add-labeled:hover, .composer-tools .attachment-add-labeled:focus-visible { background: var(--accent-hover); color: var(--ink); }
+.composer-tools .composer-tool { position: relative; isolation: isolate; display: inline-flex; align-items: center; gap: 6px; width: auto; min-height: 36px; height: auto; margin: 0; padding: 7px 12px; border: 1px solid #ffffffa6; border-radius: 18px; background: #ffffff52; box-shadow: inset 0 1px 1px #ffffffc2, 0 2px 8px #253b5510; -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2); font-size: 13px; color: #596373; transition: background .15s, box-shadow .15s; }
+.composer-tool > .gpu-glass { opacity: .28; }
+.composer-tool > svg, .composer-tool > span, .composer-tool > select { position: relative; z-index: 1; }
+.composer-tools .composer-tool:hover, .composer-tools .composer-tool:focus-within { background: #ffffff80; box-shadow: inset 0 1px 1px #fff, 0 3px 10px #253b5518; color: var(--ink); }
+.composer-tool select { cursor: pointer; outline: none; }
+.composer-tool select:focus-visible { background: transparent; }
+.composer-tools .composer-tool:disabled, .composer-tools .composer-tool:has(select:disabled) { opacity: .5; cursor: default; }
+@media (pointer: coarse) { .composer-tools .composer-tool { min-height: 44px; } }
 .model-search-surface { position: relative; display: flex; align-items: center; gap: 9px; padding: 0 12px; min-height: 44px; margin: 10px 0 12px; border-radius: 16px; background: #f1f4f8; box-shadow: inset 0 1px 2px #ffffffd0, 0 2px 7px #253b550a; }
 .model-search-surface:focus-within { background: #e9eef5; }
 .model-search-surface > svg, .model-search-surface > button { position: relative; z-index: 1; flex-shrink: 0; color: var(--muted); }
