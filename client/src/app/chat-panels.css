@@ -1,0 +1,72 @@
+/* Shared spacing and Liquid DOM surfaces for the chat controls and their popups. */
+:root { --composer-stack-gap: 8px; }
+.controls .composer-tools { margin-bottom: var(--composer-stack-gap); gap: 8px; }
+.composer-dock .settings-row { margin-top: var(--composer-stack-gap); }
+.controls .composer-tools .composer-tool { line-height: 20px; gap: 8px; white-space: nowrap; }
+.composer-tools .composer-tool[data-popup-open] { background: #ffffffb8; color: var(--ink); }
+.composer-tools .composer-tool[data-disabled] { opacity: .5; cursor: default; }
+.search-mode-chevron { display: flex; align-items: center; }
+.search-mode-chevron svg { transition: transform .16s; }
+.search-mode[data-popup-open] .search-mode-chevron svg { transform: rotate(180deg); }
+
+.liquid-menu-positioner { z-index: 30; max-width: min(var(--available-width), calc(100vw - 32px)); }
+:is(.attachment-menu, .search-mode-popup, .workspace-popup, .confirm-popup).liquid-popup {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid #ffffffc2;
+  border-radius: 22px;
+  background: #fcfdfff0;
+  color: var(--ink);
+  box-shadow: inset 0 1px 1px #fff, 0 12px 36px #253b551f, 0 3px 10px #253b5514;
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
+  transform-origin: var(--transform-origin);
+  transition: opacity .16s, scale .16s;
+}
+.liquid-popup > .gpu-glass { opacity: .5; }
+.liquid-popup-content { position: relative; z-index: 1; min-width: 0; }
+.liquid-popup[data-starting-style], .liquid-popup[data-ending-style] { opacity: 0; scale: .98; }
+.liquid-menu-list { padding: 6px; max-height: min(var(--available-height, 420px), 60dvh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.search-mode-popup { width: 200px; max-width: 100%; }
+.attachment-menu.liquid-popup { width: 240px; max-width: 100%; padding: 0; }
+.liquid-menu-item { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 12px; border: 0; border-radius: 16px; background: transparent; font: inherit; font-size: 14px; line-height: 20px; color: var(--ink); cursor: pointer; user-select: none; }
+.liquid-menu-item > svg { flex-shrink: 0; color: #657083; }
+.liquid-menu-item[data-selected], .liquid-menu-item[data-checked] { background: var(--accent-soft); }
+.liquid-menu-item[data-highlighted] { background: var(--accent-hover); }
+.liquid-menu-item[data-disabled] { opacity: .45; cursor: default; }
+.liquid-menu-check { display: flex; flex-shrink: 0; margin-left: auto; color: var(--accent-ink); }
+.attachment-library { margin-top: 6px; padding-top: 6px; border-top: 1px solid #e3e7ed; }
+.attachment-library > [role=group] { min-width: 0; }
+.attachment-library > :first-child { padding: 6px 12px; color: var(--muted); font-size: 12px; }
+.attachment-menu-filename { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.workspace-popup.liquid-popup { width: 384px; max-width: 100%; max-height: none; border-radius: 28px; }
+.workspace-popup-content { max-height: min(var(--available-height, 720px), calc(100dvh - 32px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.workspace-popup .workspace-popup-heading { padding: 16px 16px 8px 20px; gap: 12px; }
+.workspace-popup .workspace-popup-heading h2 { font-weight: 650; }
+.workspace-popup .workspace-popup-heading button { width: 36px; height: 36px; border-radius: 12px; }
+.workspace-popup .conversation-list { padding: 0 8px 8px; max-height: min(280px, 36dvh); }
+.workspace-popup .conversation-row { border-radius: 16px; padding-right: 4px; }
+.workspace-popup .conversation-open { padding: 10px 12px; gap: 10px; border-radius: 14px; }
+.workspace-popup .conversation-open span { flex: 1; }
+.workspace-popup .delete-trigger { border-radius: 12px; }
+.workspace-popup .conversation-row[data-active=true] { background: var(--accent-soft); }
+.workspace-popup .conversation-row[data-active=true] .conversation-open { font-weight: 600; }
+.workspace-popup .conversation-more { border-radius: 12px; }
+.workspace-popup .account-summary { padding: 16px 20px; background: #eef2f666; border-top-color: #e3e7ed; }
+.workspace-popup .account-usage { gap: 6px; margin: 16px 0 12px; }
+.workspace-popup .account-actions { margin-top: 8px; }
+.workspace-popup .account-actions a, .workspace-popup .account-actions button { border-radius: 12px; }
+.workspace-popup .account-delete { margin-top: 8px; padding-top: 8px; }
+.workspace-popup .delete-trigger-labeled { margin-left: -8px; }
+
+.confirm-popup.liquid-popup { position: fixed; padding: 0; display: block; border-radius: 28px; }
+.confirm-popup.liquid-popup > .confirm-content { display: flex; flex-direction: column; gap: 16px; padding: 24px; max-height: calc(100dvh - 40px); overflow-y: auto; }
+.confirm-content h2 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+.confirm-content p { line-height: 1.6; color: var(--muted); }
+.confirm-popup .confirm-content > div:last-child { display: flex; justify-content: flex-end; gap: 8px; }
+.confirm-popup .confirm-content button { min-height: 40px; padding: 8px 16px; border: 0; border-radius: 12px; background: #eef1f5; }
+.confirm-popup .confirm-content button:last-child { background: #faeeee; color: #a32727; }
+.confirm-popup .confirm-content button:disabled { opacity: .5; }
+@media (hover: hover) { .confirm-popup .confirm-content button:hover { filter: brightness(.97); } }

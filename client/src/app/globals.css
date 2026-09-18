@@ -1,4 +1,5 @@
 @import './tokens.css';
+@import './chat-panels.css';
 @import "tailwindcss";
 @source "../../node_modules/streamdown/dist/*.js";
 :root { color-scheme: light; --ink: #24262b; --muted: #6e7480; --accent: #fcb603; --accent-ink: #996b00; --accent-soft: #fcb60314; --accent-hover: #fcb60324; }

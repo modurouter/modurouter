@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
-import { ArrowUp, Mic, Square, X, Copy, Check, RotateCcw, Volume2, Globe } from 'lucide-react';
+import { ArrowUp, Mic, Square, X, Copy, Check, RotateCcw, Volume2 } from 'lucide-react';
 import { Streamdown } from 'streamdown';
 import { Button } from '@base-ui/react/button';
 import { modes, useChatStore } from '@/lib/chat-store';
@@ -14,6 +14,7 @@ import { useAttachments } from '@/lib/use-attachments';
 import type { Attachment } from '@/lib/api';
 import { AttachmentCard, AttachmentMenu, FileSource } from './attachment-ui';
 import { ModelSettings } from './model-settings';
+import { SearchMode } from './search-mode';
 import { resolveLearningVoice, type LearningView } from '@/lib/learning-voice';
 import { learningPrompt } from '@/lib/learning-topics';
 import { useLearningProgress } from '@/lib/use-learning-progress';
@@ -210,7 +211,7 @@ export function Chat() {
           <p>{speech.notice}</p>
           <Button aria-label="음성 입력 안내 닫기" onClick={speech.dismiss}><X size={18} /></Button>
         </motion.div>}</AnimatePresence>
-        <div className="composer-tools"><AttachmentMenu attachments={attachments} disabled={disabled} labeled /><label className="search-mode composer-tool" title="자동 모드에서는 질문에 따라 웹 자료를 확인합니다."><GlassSurface radius={18} /><Globe size={16} aria-hidden="true"/><select aria-label="웹 검색 모드" disabled={disabled} value={search === null ? 'auto' : search ? 'on' : 'off'} onChange={event => setSearch(event.target.value === 'auto' ? null : event.target.value === 'on')}><option value="auto">웹 검색 자동</option><option value="on">웹 검색 항상</option><option value="off">웹 검색 끄기</option></select></label></div>
+        <div className="composer-tools"><AttachmentMenu attachments={attachments} disabled={disabled} labeled /><SearchMode value={search} onChange={setSearch} disabled={disabled} /></div>
         <div className="composer-dock">
         <div className="input-row">
           <form ref={composer} className={`composer glass ${draggingFile ? 'is-file-over' : ''}`} onPaste={e => { if (!disabled && e.clipboardData.files.length) { e.preventDefault(); void attachments.add(Array.from(e.clipboardData.files)); } }} onSubmit={(e) => { e.preventDefault(); send(); }}>

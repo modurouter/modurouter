@@ -1,6 +1,6 @@
 'use client';
 import { useRef, useState } from 'react';
-import { Popover } from '@base-ui/react/popover';
+import { Menu } from '@base-ui/react/menu';
 import { FileText, ImageIcon, Plus, X, ChevronDown, Check } from 'lucide-react';
 import type { Attachment, Source } from '@/lib/api';
 import { api } from '@/lib/api';
@@ -42,15 +42,19 @@ export function AttachmentMenu({ attachments, disabled, labeled = false }: { att
   return <>
     <input hidden ref={fileInput} type="file" multiple accept={attachments.accept} onChange={e => { void attachments.add(Array.from(e.target.files || [])); e.target.value = ''; }} />
     <input hidden ref={photoInput} type="file" multiple accept="image/png,image/jpeg" onChange={e => { void attachments.add(Array.from(e.target.files || [])); e.target.value = ''; }} />
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger type="button" className={labeled ? "attachment-add attachment-add-labeled composer-tool" : "attachment-add"} aria-label="파일 또는 사진 첨부" disabled={disabled}><GlassSurface radius={labeled ? 18 : 50} tone={labeled ? 'neutral' : 'gray'} /><Plus size={18} />{labeled && <span>파일 첨부</span>}</Popover.Trigger>
-      <Popover.Portal><Popover.Positioner side="top" align="start" sideOffset={14} collisionPadding={16} className="settings-positioner"><Popover.Popup className="attachment-menu glass">
-        <Popover.Title className="sr-only">첨부하기</Popover.Title>
-        <button type="button" onClick={() => { setOpen(false); fileInput.current?.click(); }}><FileText size={18} />파일 첨부</button>
-        <button type="button" onClick={() => { setOpen(false); photoInput.current?.click(); }}><ImageIcon size={18} />사진 첨부</button>
-        {!!attachments.files.length && <div className="attachment-library"><small>이 대화의 파일</small>{attachments.files.filter(f => f.id).map(f => <button type="button" key={f.localId} aria-pressed={f.selected} disabled={f.status !== 'ready'} onClick={() => attachments.toggle(f.localId)}><span>{f.filename}</span>{f.selected && <Check size={15} />}</button>)}</div>}
-      </Popover.Popup></Popover.Positioner></Popover.Portal>
-    </Popover.Root>
+    <Menu.Root open={open} onOpenChange={setOpen}>
+      <Menu.Trigger type="button" className={labeled ? "attachment-add attachment-add-labeled composer-tool" : "attachment-add"} aria-label="파일 또는 사진 첨부" disabled={disabled}><GlassSurface radius={labeled ? 18 : 50} tone={labeled ? 'neutral' : 'gray'} /><Plus size={18} />{labeled && <span>파일 첨부</span>}</Menu.Trigger>
+      <Menu.Portal><Menu.Positioner side="top" align="start" sideOffset={8} collisionPadding={16} className="liquid-menu-positioner"><Menu.Popup className="attachment-menu liquid-popup" aria-label="첨부하기">
+        <GlassSurface radius={22} />
+        <div className="liquid-popup-content liquid-menu-list">
+          <Menu.Item className="liquid-menu-item" onClick={() => { setOpen(false); fileInput.current?.click(); }}><FileText size={18} /><span>파일 첨부</span></Menu.Item>
+          <Menu.Item className="liquid-menu-item" onClick={() => { setOpen(false); photoInput.current?.click(); }}><ImageIcon size={18} /><span>사진 첨부</span></Menu.Item>
+          {!!attachments.files.length && <Menu.Group className="attachment-library"><Menu.GroupLabel>이 대화의 파일</Menu.GroupLabel>{attachments.files.filter(f => f.id).map(f => <Menu.CheckboxItem className="liquid-menu-item" key={f.localId} checked={f.selected} disabled={f.status !== 'ready'} onCheckedChange={() => attachments.toggle(f.localId)}>
+            <span className="attachment-menu-filename" title={f.filename}>{f.filename}</span><Menu.CheckboxItemIndicator className="liquid-menu-check"><Check size={16} /></Menu.CheckboxItemIndicator>
+          </Menu.CheckboxItem>)}</Menu.Group>}
+        </div>
+      </Menu.Popup></Menu.Positioner></Menu.Portal>
+    </Menu.Root>
   </>;
 }
 export function FileSource({ source }: { source: Source }) {
