@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useRef } from 'react';
-import { api, apiUrl, ApiError, fetchApi, consumeEvents, ensureSession, responseError, runErrorMessage, type Run, type Source, type User } from './api';
+import { api, apiUrl, ApiError, fetchApi, consumeEvents, ensureSession, responseError, runErrorMessage, type Attachment, type Run, type Source, type User } from './api';
 import { useModelSettings, effortOptions, modelKey, routingFor } from './model-settings';
 import { useChatStore, type Mode } from './chat-store';
+import { composeLearningMessage } from './learning-journeys';
 
 const stages: Record<string, string> = { accepted: '질문 접수', preparing: '대화 준비 중', model: '답변 준비 중', tool: '자료 확인 중', streaming: '답변 작성 중', context_truncated: '입력 한도에 맞춰 일부 맥락 제외', tool_warning: '일부 자료 확인 실패' };
 const active = (run: Run) => ['accepted', 'preparing', 'model', 'tool', 'streaming'].includes(run.status);
@@ -30,7 +31,7 @@ export function useChatApi() {
     catch { operation.cancelling = false; operation.cancel = false; throw new Error('중지 요청을 보내지 못했어요. 다시 눌러 주세요.'); }
   }
 
-  async function send(text: string, mode: Mode, options: {attachment_ids?: string[]; search_enabled?: boolean | null} = {}) {
+  async function send(text: string, mode: Mode, options: {attachment_ids?: string[]; search_enabled?: boolean | null; attachments?: Attachment[]; learning_context?: string} = {}) {
     if (current.current) return;
     const store = useChatStore.getState();
     conversation.current = store.conversationId ?? null;
@@ -43,7 +44,7 @@ export function useChatApi() {
     let content = '';
     let sources: Source[] = [];
     let terminal = false;
-    store.add({ id: crypto.randomUUID(), role: 'user', content: text });
+    store.add({ id: crypto.randomUUID(), role: 'user', content: text, attachments: options.attachments });
     store.add({ id, role: 'assistant', content: '', activity: { startedAt, status: 'writing', stage: events[0], events } });
     const stage = (value: string) => {
       if (events.at(-1) !== value) events = [...events, value];
@@ -79,7 +80,7 @@ export function useChatApi() {
       const selected = settings.models?.find(m => modelKey(m) === settings.model);
       const supported = ['auto','free'].includes(settings.model) ? settings.models?.filter(m => settings.model === 'free' ? m.is_free : m.auto_eligible).flatMap(m => m.efforts || []) : selected?.efforts;
       const effort = supported?.includes(effortOptions[settings.effort]?.id) ? effortOptions[settings.effort].id : supported?.[0];
-      const body = JSON.stringify({ ...(settings.chosen ? { routing: routingFor(settings.model, settings.models) } : {}), reasoning_effort: effort || null, message: text, attachment_ids: options.attachment_ids || [], search_enabled: options.search_enabled ?? null, explanation_mode: mode === 'student' ? 'standard' : 'simple' });
+      const body = JSON.stringify({ ...(settings.chosen ? { routing: routingFor(settings.model, settings.models) } : {}), reasoning_effort: effort || null, message: composeLearningMessage(text, mode, options.learning_context), attachment_ids: options.attachment_ids || [], search_enabled: options.search_enabled ?? null, explanation_mode: mode === 'student' ? 'standard' : 'simple' });
       const key = uncertain.current?.body === body && uncertain.current.conversation === conversation.current ? uncertain.current.key : crypto.randomUUID();
       uncertain.current = { body, key, conversation: conversation.current };
       stage('질문 전송 중');

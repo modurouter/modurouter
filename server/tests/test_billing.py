@@ -172,3 +172,37 @@ async def test_review_recovery_requires_settled_inactive_runs(database):
         assert not (await db.get(User, run.user_id)).paid_blocked
         row = await db.scalar(select(QuotaBucket).where(QuotaBucket.scope == "user"))
         assert row.spent_usd == Decimal(".02") and row.request_count == 1
+
+
+async def test_guest_shared_quota_allows_100_and_reports_remaining(database):
+    from modurouter.billing import buckets, usage_summary
+    config = Settings(_env_file=None, guest_daily_request_limit=100, user_daily_request_limit=30)
+    async with database.begin() as db:
+        guest = User(google_sub="guest:quota-test", email="guest@example.test", display_name="방문자")
+        other = User(google_sub="guest:other", email="other@example.test", display_name="방문자")
+        db.add_all([guest, other])
+        await db.flush()
+        await admission_lock(db)
+        rows = await buckets(db, guest.id, quota_day(), config)
+        for row in rows:
+            row.request_count = 99
+        await admit_run(db, guest.id, config)
+        summary = await usage_summary(db, guest.id, config)
+        assert summary["request_limit"] == 100
+        assert summary["remaining_requests"] == 0
+        assert summary["shared_guest_quota"] is True
+        guest_id, other_id = guest.id, other.id
+    for user_id in (guest_id, other_id):
+        async with database() as db:
+            with pytest.raises(AppError, match="REQUEST_LIMIT"):
+                async with db.begin():
+                    await admission_lock(db)
+                    await admit_run(db, user_id, config)
+
+
+def test_request_limits_distinguish_guests_from_members():
+    from modurouter.billing import daily_request_limit
+    config = Settings(_env_file=None, guest_daily_request_limit=100, user_daily_request_limit=30)
+    assert daily_request_limit(User(google_sub="guest:test"), config) == 100
+    assert daily_request_limit(User(google_sub="deleted:guest:test"), config) == 100
+    assert daily_request_limit(User(google_sub="google-member"), config) == 30

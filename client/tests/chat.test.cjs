@@ -15,7 +15,7 @@ function setup(fetcher, settings={loaded:false}) {
   const api=load('src/lib/api.ts',{fetch});
   const state={conversationId:null,setConversationId(id){this.conversationId=id},messages:[],streaming:false,add(m){this.messages.push(m)},patch(id,p){Object.assign(this.messages.find(m=>m.id===id),p)},setStreaming(v){this.streaming=v}};
   const modelSettings=load('src/lib/model-settings.ts',{require(name){if(name==='zustand')return {create:()=>{}};if(name==='./api')return api;throw Error(name);}});
-  const hook=load('src/lib/use-chat-api.ts',{fetch,require(name){if(name==='react')return {useRef:v=>({current:v}),useEffect:()=>{}};if(name==='./api')return api;if(name==='./model-settings')return {...modelSettings,useModelSettings:{getState:()=>settings}};if(name==='./chat-store')return {useChatStore:{getState:()=>state}};throw Error(name);}}).useChatApi();
+  const hook=load('src/lib/use-chat-api.ts',{fetch,require(name){if(name==='react')return {useRef:v=>({current:v}),useEffect:()=>{}};if(name==='./api')return api;if(name==='./model-settings')return {...modelSettings,useModelSettings:{getState:()=>settings}};if(name==='./learning-journeys')return load('src/lib/learning-journeys.ts',{});if(name==='./chat-store')return {useChatStore:{getState:()=>state}};throw Error(name);}}).useChatApi();
   return {calls,state,hook};
 }
 const result=(status='completed')=>({run_id:'run-1',status,response:'5입니다.',sources:[],selected_model:'test/model',providers:['test']});
@@ -103,4 +103,14 @@ test('a text model without native tools can send document attachments and web lo
   assert.deepEqual(body.attachment_ids,['report-docx','scan-pdf']);
   assert.equal(body.search_enabled,true);
   assert.equal(state.messages[1].activity.status,'complete');
+});
+
+test('learning context and attachments preserve routing and the visible question', async () => {
+ const {hook,state,calls}=setup(url=>common(url)||Response.json(result()));
+ const files=[{id:'file-1',filename:'lesson.pdf',status:'ready'}];
+ await hook.send('내 문제로 복습','student',{attachments:files,attachment_ids:['file-1'],learning_context:'풀이를 확인하고 힌트를 주세요.',search_enabled:true});
+ const body=JSON.parse(calls.find(c=>c.url.endsWith('/runs')).init.body);
+ assert.equal(state.messages[0].content,'내 문제로 복습');assert.equal(state.messages[0].attachments[0].id,'file-1');
+ assert.match(body.message,/자기주도 학습 코치/);assert.match(body.message,/풀이를 확인하고 힌트/);
+ assert.deepEqual(body.attachment_ids,['file-1']);assert.equal(body.search_enabled,true);
 });

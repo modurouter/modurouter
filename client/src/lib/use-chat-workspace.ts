@@ -118,7 +118,7 @@ export function useChatWorkspace() {
     store.setConversationId(null); store.setMessages([]); setAttachments([]); setError('');
     if (user) storage.remove(`modurouter-conversation:${user.id}`);
   }
-  async function upload(files: FileList | null) {
+  async function upload(files: FileList | File[] | null) {
     if (!files?.length || !user || lock.current || streaming) return;
     const selected = Array.from(files);
     const maxFiles = config?.max_attachments || 3;
@@ -161,5 +161,5 @@ export function useChatWorkspace() {
   }
   async function eraseAccount() { await api('/v1/me',{method:'DELETE'},user?.csrf_token); storage.remove('modurouter-draft'); location.reload(); }
   async function cancelRecovery() { if (recovering.current) await api(`/v1/runs/${recovering.current}/cancel`,{method:'POST'},user?.csrf_token); }
-  return {user,config,conversations,cursor,usage,attachments,busy,error,conversationId,refresh,openConversation,newConversation,upload,removeAttachment,removeConversation,loadMore,logout,eraseAccount,cancelRecovery,clearAttachments:()=>setAttachments([])};
+  return {user,config,conversations,cursor,usage,attachments,busy,error,conversationId,refresh,openConversation,newConversation,upload,removeAttachment,removeConversation,loadMore,logout,eraseAccount,cancelRecovery,clearAttachments:()=>setAttachments([]), selectAttachment:(file:Attachment)=>setAttachments(files=>files.some(item=>item.id===file.id)?files:[...files,file]), excludeAttachment:(id:string)=>setAttachments(files=>files.filter(file=>file.id!==id))};
 }

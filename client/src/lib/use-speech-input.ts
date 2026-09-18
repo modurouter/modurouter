@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, apiUrl, ensureSession, responseError } from './api';
 import { encodeSpeech } from './encode-speech';
 
-export function useSpeechInput(onText: (text: string) => void) {
+export function useSpeechInput(onText: (text: string, transcript: string) => void) {
   const [recording, setRecording] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [notice, setNotice] = useState('');
@@ -68,14 +68,14 @@ export function useSpeechInput(onText: (text: string) => void) {
           if (typeof data.text !== 'string' || !data.text.trim()) throw new Error('목소리를 인식하지 못했어요. 다시 녹음해 주세요.');
           const combined = existing + (existing.trim() ? ' ' : '') + data.text.trim();
           if (combined.length > 12000) throw new Error('변환한 문장이 입력 한도를 넘었어요. 짧게 나누어 녹음해 주세요.');
-          write.current(combined);
-          setNotice('말씀하신 내용을 입력했어요. 내용을 확인한 뒤 전송해 주세요.');
+          write.current(combined, data.text.trim());
+          setNotice('');
         } catch (error) {
           if (!cancelled.current) setNotice(error instanceof Error ? error.message : '음성 인식에 실패했어요.');
         } finally { busy.current = false; request.current = null; setProcessing(false); }
       };
       recorder.start(); setRecording(true);
-      setNotice('편하게 말씀해 주세요. 다 하셨으면 정지 버튼을 눌러 주세요.');
+      setNotice('편하게 말씀해 주세요. 다시 누르면 바로 전송돼요.');
       timer.current = setTimeout(stop, 600_000);
     } catch (error) {
       release(); busy.current = false;
