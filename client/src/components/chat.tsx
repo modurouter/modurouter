@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, MotionConfig } from 'motion/react';
-import { ArrowUp, Mic, Square, X, Copy, Check, RotateCcw, Volume2 } from 'lucide-react';
+import { ArrowUp, LoaderCircle, Mic, Square, X, Copy, Check, RotateCcw, Volume2 } from 'lucide-react';
 import { Streamdown } from 'streamdown';
 import { Button } from '@base-ui/react/button';
 import { modes, useChatStore } from '@/lib/chat-store';
@@ -245,7 +245,6 @@ export function Chat() {
         {workspace.busy && <p className="workspace-status" role="status">대화와 자료를 확인하고 있어요.</p>}
         {pendingVoice && streaming && <p className="request-error" role="status">답변이 끝나면 이어서 전송할게요.<button type="button" onClick={() => setPendingVoice(null)}>전송 취소</button></p>}
         {requestError && <p className="request-error" role="alert">{requestError}</p>}
-        {pendingAttachmentSend && <p className="request-error" role="status">첨부파일을 읽고 있어요. 준비되면 자동으로 전송할게요.<button type="button" onClick={() => setPendingAttachmentSend(null)}>전송 취소</button></p>}
         {!!attachments.failed.length && <p className="attachment-error"><button type="button" disabled={disabled} onClick={() => { attachments.failed.forEach(file => attachments.toggle(file.id)); setRequestError(''); }}>읽지 못한 파일 제외</button></p>}
         <AnimatePresence>{speech.notice && <motion.div className="voice-panel glass" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} role="status">
           <div className="voice-wave" aria-hidden="true">{[12, 24, 17, 32, 20, 28, 14].map((height, i) => <span key={i} style={{ height, animationDelay: `${i * .1}s` }} />)}</div>
@@ -261,7 +260,7 @@ export function Chat() {
             {attachments.error && <p className="attachment-error" role="alert">{attachments.error}<button type="button" onClick={attachments.clearError} aria-label="첨부 안내 닫기"><X size={14} /></button></p>}
             <div className="composer-entry">
             <textarea ref={textarea} aria-label="메시지 입력" placeholder={attachments.ready.length ? '질문을 입력하거나 바로 전송해 자료를 요약해 보세요' : currentMode.placeholder} value={input} readOnly={recording || speech.processing || workspace.busy || (mode === 'student' && learningView.open && studio.busy)} rows={1} maxLength={12000} onChange={(e) => { setPendingVoice(null); setInput(e.target.value); }} />
-            <motion.button whileTap={{ scale: .92 }} className={`send-button ${hasContent || streaming ? 'is-ready' : ''}`} type={streaming ? 'button' : 'submit'} onClick={streaming ? () => stop() : undefined} disabled={!streaming && (!hasContent || disabled)} aria-label={streaming ? '응답 중지' : '메시지 전송'}>{streaming ? <Square size={17} fill="currentColor" /> : <ArrowUp size={29} strokeWidth={1.7} />}</motion.button>
+            <motion.button whileTap={{ scale: .92 }} className={`send-button ${hasContent || streaming ? 'is-ready' : ''}`} type={streaming || pendingAttachmentSend ? 'button' : 'submit'} onClick={streaming ? (event) => { event.preventDefault(); void stop(); } : pendingAttachmentSend ? (event) => { event.preventDefault(); setPendingAttachmentSend(null); } : undefined} disabled={!streaming && !pendingAttachmentSend && (!hasContent || disabled)} aria-busy={Boolean(pendingAttachmentSend)} aria-label={streaming ? '응답 중지' : pendingAttachmentSend ? '첨부파일 처리 대기 중, 전송 취소' : '메시지 전송'} title={pendingAttachmentSend ? '첨부파일을 읽는 중입니다. 누르면 전송 예약을 취소합니다.' : undefined}>{streaming ? <Square size={17} fill="currentColor" /> : pendingAttachmentSend ? <LoaderCircle className="send-loading" size={29} strokeWidth={1.7} aria-hidden="true" /> : <ArrowUp size={29} strokeWidth={1.7} />}</motion.button>
             </div>
           </form>
           <motion.button className={`microphone glass ${recording ? 'is-recording' : ''}`} whileHover={{ scale: 1.045 }} whileTap={{ scale: .94 }} disabled={!recording && (streaming || workspace.busy || speech.processing)} onClick={() => { output.stop(); if (recording) speech.stop(); else { setPendingVoice(null); setRequestError(''); void speech.start(input); } }} aria-label={recording ? '녹음 종료 후 전송' : '음성 입력'} title="음성으로 입력하기 / 최대 10분" aria-pressed={recording}><GlassSurface radius={50} tone="accent" />{recording ? <Square size={21} strokeWidth={1.5} /> : <Mic size={27} strokeWidth={1.45} />}</motion.button>
@@ -278,6 +277,6 @@ export function Chat() {
         </div>
       </div>
     </section>
-    <span className="sr-only" role="status">{streaming ? '응답을 작성하고 있습니다' : messages.at(-1)?.activity?.status === 'error' ? '응답 처리에 실패했습니다' : messages.at(-1)?.activity?.status === 'stopped' ? '응답이 중지되었습니다' : messages.length ? '응답이 완료되었습니다' : ''}</span>
+    <span className="sr-only" role="status">{pendingAttachmentSend ? '첨부파일을 읽고 있습니다. 준비되면 자동으로 전송합니다.' : streaming ? '응답을 작성하고 있습니다' : messages.at(-1)?.activity?.status === 'error' ? '응답 처리에 실패했습니다' : messages.at(-1)?.activity?.status === 'stopped' ? '응답이 중지되었습니다' : messages.length ? '응답이 완료되었습니다' : ''}</span>
   </main></MotionConfig>;
 }
