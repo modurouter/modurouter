@@ -1,4 +1,4 @@
-> Current behavior: guest login is removed. Configured Google and administrator login are the entry points. Historical verification notes below describe the version tested at that time, including the former guest flow. See README for current input limits and billing recovery.
+> Current behavior: visitors automatically enter a private guest session. Configured Google and administrator login remain optional. Historical verification notes below describe the version tested at that time, including the former guest flow. See README for current input limits and billing recovery.
 
 # Phase 1 delivery and acceptance
 
@@ -9,7 +9,7 @@ Source: Google document `1ESO4ZnpFlq2CiH4bcgtioTTkis89nmnopPMj-QOT_WY`, tabs `t.
 - The product is a Korean AI harness. OpenRouter is the only LLM provider.
 - Web deployment uses `https://modurouter.vercel.app`, as requested by the user. Browser API and auth traffic use same-origin proxying to the VPS, with OAuth callback on the public web origin. The source TRD now records this deployment topology.
 - The user explicitly requests no database backups. Do not configure backup jobs or create recovery copies. The source PRD and TRD now use DB restart data persistence as the acceptance check instead of backup restoration.
-- Visitors sign in through configured Google OAuth or `/admin` password login. Automatic guest access has been removed. Historical guest quota records remain solely for outstanding cost reconciliation.
+- Visitors can use a guest session immediately, or sign in through configured Google OAuth or `/admin` password login. Guests share the configured daily request and cost limits.
 - The user removed the provider-key spending cap and the internal platform daily dollar cap from Phase 1. Per-user request and cost limits remain enforced. The platform ledger continues to record total spending.
 - The user authorized removal of old VPS application workloads and data before deploying the new MariaDB and FastAPI stack. Retain essential operating system and SSH access.
 - Root `.env` is the only manually maintained configuration source, mode 600. Never source it as a shell script. Generated deployment configuration is derived from it. No `.env.example`.
@@ -42,7 +42,7 @@ Quiet neutral workspace with square edges and a four-pixel spacing rhythm. The c
 
 ## Operational limitations
 
-A single VPS outage interrupts the service. By explicit user choice, no database backups are made; loss of the persistent volume is not recoverable by this application. Google client credentials are absent and live Google login is skipped per user instruction. New visitors must sign in through a configured login method. Platform and provider-key dollar caps are omitted by user choice, while member limits remain active.
+A single VPS outage interrupts the service. By explicit user choice, no database backups are made; loss of the persistent volume is not recoverable by this application. Google client credentials are absent and live Google login is skipped per user instruction. New visitors can use the service without signing in. Platform and provider-key dollar caps are omitted by user choice, while member limits remain active.
 
 ## Current verification evidence
 

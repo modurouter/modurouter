@@ -206,18 +206,59 @@ async def test_logout_revokes_session(identities):
         assert (await client.get("/v1/me")).status_code == 401
 
 
-async def test_guest_login_removed_and_existing_guest_session_rejected(identities, database):
-    async with database.begin() as db:
-        guest = User(google_sub="guest:legacy", email="", display_name="게스트")
-        db.add(guest)
-        await db.flush()
-        db.add(LoginSession(user_id=guest.id, token_hash=digest("old-guest"),
-            csrf_hash=digest(csrf_token("old-guest")), expires_at=utcnow() + timedelta(days=1)))
+async def test_guest_session_features_isolation_and_reuse(identities, monkeypatch, tmp_path):
+    from modurouter import files
+    monkeypatch.setattr(files.settings, "upload_directory", tmp_path)
+    origin = {"Origin": get_settings().web_origin}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        assert (await client.post("/auth/guest", headers={"Origin": get_settings().web_origin})).status_code == 404
-        client.cookies.set(COOKIE, "old-guest")
         assert (await client.get("/v1/me")).status_code == 401
-        assert "guest_available" not in (await client.get("/v1/config")).json()
+        assert (await client.post("/auth/guest")).status_code == 403
+        assert (await client.post("/auth/guest", headers={"Origin": "https://evil.test"})).status_code == 403
+        started = await client.post("/auth/guest", headers=origin)
+        assert started.status_code == 200
+        cookie = started.headers["set-cookie"].lower()
+        assert "httponly" in cookie and "samesite=lax" in cookie
+        assert "max-age=" not in cookie and "expires=" not in cookie
+        user = (await client.get("/v1/me")).json()
+        assert user["guest"] is True
+        headers = {**origin, "X-CSRF-Token": user["csrf_token"]}
+        assert (await client.post("/v1/conversations", json={}, headers=origin)).status_code == 403
+        conversation = await client.post("/v1/conversations", json={"title": "비로그인 대화"}, headers=headers)
+        assert conversation.status_code == 200
+        cid = conversation.json()["id"]
+        assert (await client.get("/v1/usage")).json()["shared_guest_quota"] is True
+        assert (await client.get(f"/v1/conversations/{identities}")).status_code == 404
+        uploaded = await client.post("/v1/attachments", data={"conversation_id": cid},
+            files={"file": ("note.txt", b"guest attachment", "text/plain")}, headers=headers)
+        assert uploaded.status_code == 200
+        previous = client.cookies.get(COOKIE)
+        assert (await client.post("/auth/guest", headers=origin)).status_code == 200
+        assert client.cookies.get(COOKIE) == previous
+        assert (await client.get("/v1/me")).json()["id"] == user["id"]
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as other:
+            await other.post("/auth/guest", headers=origin)
+            assert (await other.get("/v1/me")).json()["id"] != user["id"]
+            assert (await other.get(f"/v1/conversations/{cid}")).status_code == 404
+            assert (await other.get(f"/v1/attachments/{uploaded.json()['id']}")).status_code == 404
+        assert (await client.delete("/v1/me", headers=headers)).status_code == 200
+        assert (await client.get("/v1/me")).status_code == 401
+        await client.post("/auth/guest", headers=origin)
+        assert (await client.get("/v1/me")).json()["id"] != user["id"]
+
+
+async def test_guest_can_sign_in_as_admin_without_guest_downgrade(identities, admin_credentials):
+    origin = {"Origin": get_settings().web_origin}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/auth/guest", headers=origin)
+        previous = client.cookies.get(COOKIE)
+        assert (await client.post("/auth/admin", json=admin_credentials, headers=origin)).status_code == 200
+        member = (await client.get("/v1/me")).json()
+        assert member["guest"] is False
+        assert (await client.post("/auth/guest", headers=origin)).status_code == 200
+        assert (await client.get("/v1/me")).json()["id"] == member["id"]
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                    cookies={COOKIE: previous}) as old:
+            assert (await old.get("/v1/me")).status_code == 401
 
 
 async def test_expired_session_denied(identities, database):

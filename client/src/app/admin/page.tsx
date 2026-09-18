@@ -15,8 +15,10 @@ export default function AdminLogin() {
 
   useEffect(() => {
     let live = true;
-    api<User>('/v1/me').then(() => {
-      if (live) router.replace('/');
+    api<User>('/v1/me').then(user => {
+      if (!live) return;
+      if (user.guest) setChecking(false);
+      else router.replace('/');
     }).catch((reason: unknown) => {
       if (!live) return;
       if (!(reason instanceof ApiError && reason.status === 401)) {

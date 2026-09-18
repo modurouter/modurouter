@@ -44,7 +44,7 @@ async def current_user(request: Request, db: AsyncSession = Depends(get_db)) -> 
     session = await db.scalar(select(LoginSession).where(LoginSession.token_hash == digest(token),
         LoginSession.revoked_at.is_(None), LoginSession.expires_at > utcnow()))
     user = await db.get(User, session.user_id) if session else None
-    if not user or user.deleted_at or user.google_sub.startswith("guest:"):
+    if not user or user.deleted_at:
         raise AppError("SESSION_EXPIRED", "로그인이 만료되었습니다. 다시 로그인해 주세요.", 401)
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         supplied = request.headers.get("X-CSRF-Token", "")
@@ -99,9 +99,28 @@ async def start_session(request: Request, db: AsyncSession, user: User, response
         csrf_hash=digest(csrf_token(raw_session)), expires_at=utcnow() + timedelta(days=settings.session_days)))
     await db.commit()
     request.session.clear()
-    response.set_cookie(COOKIE, raw_session, max_age=settings.session_days * 86400,
+    response.set_cookie(COOKIE, raw_session,
+        max_age=None if user.google_sub.startswith("guest:") else settings.session_days * 86400,
         httponly=True, secure=settings.environment == "production", samesite="lax", path="/")
     return response
+
+
+@router.post("/auth/guest")
+async def guest_start(request: Request, db: AsyncSession = Depends(get_db)):
+    if request.headers.get("Origin") != settings.web_origin:
+        raise AppError("CSRF_INVALID", "요청을 확인할 수 없습니다.", 403)
+    previous = request.cookies.get(COOKIE)
+    if previous:
+        session = await db.scalar(select(LoginSession).where(
+            LoginSession.token_hash == digest(previous), LoginSession.revoked_at.is_(None),
+            LoginSession.expires_at > utcnow()))
+        user = await db.get(User, session.user_id) if session else None
+        if user and not user.deleted_at:
+            return {"started": True}
+    user = User(google_sub="guest:" + secrets.token_urlsafe(32), email="", display_name="비로그인 사용자")
+    db.add(user)
+    await db.flush()
+    return await start_session(request, db, user, JSONResponse({"started": True}))
 
 
 @router.get("/v1/me")

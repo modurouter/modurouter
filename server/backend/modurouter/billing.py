@@ -36,8 +36,7 @@ async def buckets(db: AsyncSession, user_id: str, day: date, settings: Settings)
     result = []
     specs = [("platform", "global", None),
              ("user", user_id, settings.user_daily_budget_usd)]
-    # Legacy guest buckets are needed only to reconcile charges from before
-    # guest login was removed. Existing guest sessions cannot admit new runs.
+    # Guest sessions share a quota so a fresh session cannot reset spending limits.
     owner = await db.get(User, user_id)
     if owner and owner.google_sub.startswith(("guest:", "deleted:guest:")):
         specs.append(("guest", "shared", settings.user_daily_budget_usd))

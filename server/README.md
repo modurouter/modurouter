@@ -2,7 +2,7 @@
 
 Korean AI harness: FastAPI, MariaDB, OpenRouter, ZenMux, OpenAI, Upstage and Next.js.
 
-The prototype is deployed at https://modurouter.vercel.app. Visitors sign in with Google. The `/admin` page accepts the server-configured username and password and opens the same member workspace. Automatic guest login and the `/auth/guest` endpoint have been removed; old guest sessions no longer authorize requests. Native browser Korean voice input and readout have been tested; physical microphone and speaker quality were not measured. The acceptance checklist and explicit scope decisions are in [docs/phase-1.md](docs/phase-1.md).
+The prototype is deployed at https://modurouter.vercel.app. Visitors can use the service immediately without signing in, or optionally sign in with Google. The `/admin` page accepts the server-configured username and password and opens the same member workspace. The home page automatically creates a private guest session through `/auth/guest` when no valid session exists. Guest cookies are session-only. Guests can ask questions and attach files, and share the configured daily request and cost limits. Guest conversations stay separate from signed-in accounts and are not transferred on login. Native browser Korean voice input and readout have been tested; physical microphone and speaker quality were not measured. The acceptance checklist and explicit scope decisions are in [docs/phase-1.md](docs/phase-1.md).
 The selected `modurouter.vercel.app` deployment uses a same-origin Vercel proxy for auth and API requests. The source TRD records this topology.
 
 ## Local backend
@@ -120,7 +120,7 @@ Browser disconnect propagation through Vercel is not guaranteed. The client send
 
 ## Review fixes and recovery
 
-The landing page advertises configured Google and administrator login methods. Either can be omitted from `.env`; an unconfigured method remains unavailable. Guest billing buckets are retained only for historical reconciliation.
+The landing page advertises configured Google and administrator login methods. Either can be omitted from `.env`; an unconfigured method remains unavailable. Guest access is available even when neither login method is configured. Existing valid sessions are reused, including signed-in accounts.
 
 `MAX_INPUT_TOKENS` defaults to 16384 and is forwarded by deployment. The estimator reserves two tokens per Hangul/CJK character with framing and headroom, rather than counting every UTF-8 byte. It remains an estimate across providers. Model context windows and existing spending limits still apply. Source prefixes use the available input budget, and excluded content is disclosed beside the answer. The extractor retains its 20,000-character and 20-page limits.
 

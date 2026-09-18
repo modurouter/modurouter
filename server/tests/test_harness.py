@@ -133,6 +133,21 @@ async def test_account_failure_switches_provider_and_accounts_correctly(world, d
             assert ledger.cost_source == "calculated" and ledger.cost_usd == Decimal("0.000009")
 
 
+async def test_guest_can_stream_and_reload_conversation(world, provider):
+    client, _ = world
+    client.cookies.clear()
+    assert (await client.post("/auth/guest")).status_code == 200
+    guest = (await client.get("/v1/me")).json()
+    assert guest["guest"] is True
+    client.headers["X-CSRF-Token"] = guest["csrf_token"]
+    conversation = (await client.post("/v1/conversations", json={})).json()
+    response = await client.post(f"/v1/conversations/{conversation['id']}/runs", json={"message": "안녕하세요"})
+    assert response.status_code == 200
+    assert "event: delta" in response.text and "event: done" in response.text
+    saved = (await client.get(f"/v1/conversations/{conversation['id']}")).json()
+    assert any(message["content"] == "안녕하세요. 함께 알아보겠습니다." for message in saved["messages"])
+
+
 async def test_stream_saved_and_idempotency_does_not_regenerate(world, provider, database, caplog):
     client, identifier = world
     url = f"/v1/conversations/{identifier}/runs"

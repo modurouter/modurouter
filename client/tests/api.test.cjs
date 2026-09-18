@@ -7,7 +7,7 @@ const ts = require('typescript');
 
 const exportsObject = {};
 const source = readFileSync(resolve(__dirname, '../src/lib/api.ts'), 'utf8');
-runInNewContext(ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.CommonJS}}).outputText,
+runInNewContext(ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}}).outputText,
   {exports: exportsObject, TextDecoder, Headers, FormData, fetch, process});
 const {consumeEvents, responseError} = exportsObject;
 
@@ -42,4 +42,34 @@ test('saved run errors retain an actionable reason after reload', () => {
   assert.match(exportsObject.runErrorMessage('SEARCH_UNAVAILABLE'), /웹 검색/);
   assert.match(exportsObject.runErrorMessage('PAGE_UNAVAILABLE'), /페이지/);
   assert.match(exportsObject.runErrorMessage('UNKNOWN'), /다시 시도/);
+});
+
+for (const signedIn of [false, true]) {
+  test(`session bootstrap ${signedIn ? 'keeps the signed-in account' : 'starts a guest without login'}`, async () => {
+    const calls = [];
+    const target = {};
+    runInNewContext(ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}}).outputText,
+      {exports: target, TextDecoder, Headers, FormData, process, fetch: async (url, init) => {
+        calls.push([url, init.method || 'GET']);
+        if (calls.length === 1 && !signedIn) return Response.json({code: 'AUTH_REQUIRED'}, {status: 401});
+        if (url.endsWith('/auth/guest')) return Response.json({started: true});
+        return Response.json({id: signedIn ? 'member' : 'guest', guest: !signedIn});
+      }});
+    const user = await target.ensureSession();
+    assert.equal(user.guest, !signedIn);
+    assert.deepEqual(calls.map(([url, method]) => [new URL(url, 'http://test').pathname, method]),
+      signedIn ? [['/v1/me', 'GET']] : [['/v1/me', 'GET'], ['/auth/guest', 'POST'], ['/v1/me', 'GET']]);
+  });
+}
+
+test('session bootstrap does not replace an account on service failures', async () => {
+  const target = {};
+  let calls = 0;
+  runInNewContext(ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022}}).outputText,
+    {exports: target, TextDecoder, Headers, FormData, process, fetch: async () => {
+      calls++;
+      return Response.json({code: 'SERVICE_UNAVAILABLE'}, {status: 503});
+    }});
+  await assert.rejects(target.ensureSession(), {status: 503});
+  assert.equal(calls, 1);
 });

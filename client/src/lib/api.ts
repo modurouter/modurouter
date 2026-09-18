@@ -20,6 +20,15 @@ export async function api<T>(url: string, init: RequestInit = {}, csrf?: string)
   }
   return response.json();
 }
+export async function ensureSession(): Promise<User> {
+  try {
+    return await api<User>('/v1/me');
+  } catch (error) {
+    if (!(error instanceof ApiError && error.status === 401)) throw error;
+    await api('/auth/guest', {method: 'POST'});
+    return api<User>('/v1/me');
+  }
+}
 const runErrors: Record<string, string> = {
   SEARCH_UNAVAILABLE: '웹 검색을 사용할 수 없습니다. 검색을 끄거나 잠시 후 다시 시도해 주세요.',
   PAGE_UNAVAILABLE: '페이지를 읽을 수 없습니다. 주소를 확인하거나 내용을 파일로 첨부해 주세요.',
