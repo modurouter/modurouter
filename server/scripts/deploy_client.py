@@ -13,6 +13,8 @@ def main():
     if not api_origin.startswith("https://"):
         raise ValueError("Production API origin must use HTTPS")
     command = ["npx", "--yes", "vercel@latest", "deploy", "--prod", "--yes", "--name", "modurouter",
+               "--build-env", "PRODUCTION_WEB_ORIGIN=" + web_origin,
+               "--build-env", "PRODUCTION_API_ORIGIN=" + api_origin,
                "--build-env", "API_UPSTREAM_URL=https://" + values["API_DOMAIN"],
                "--build-env", "NEXT_PUBLIC_API_ORIGIN=" + (api_origin if api_origin != web_origin else "")]
     process = subprocess.run(command, cwd=ROOT / "client", env={**os.environ, "CI": "1", "VERCEL_TOKEN": token},

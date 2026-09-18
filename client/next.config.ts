@@ -27,6 +27,14 @@ const contentSecurityPolicy = [
 const nextConfig: NextConfig = {
   agentRules: false,
   poweredByHeader: false,
+  async redirects() {
+    return process.env.VERCEL === '1' && webOrigin ? [{
+      source: '/:path*',
+      missing: [{type: 'host' as const, value: new URL(webOrigin).hostname.replace(/\./g, '\\.') }],
+      destination: `${webOrigin}/:path*`,
+      permanent: true,
+    }] : [];
+  },
   async rewrites() {
     return browserApiOrigin ? [] : ['/auth/:path*', '/v1/:path*'].map(source => ({source, destination: `${backend}${source}`}));
   },

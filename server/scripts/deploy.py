@@ -10,8 +10,9 @@ from vps import ROOT, connect
 def main():
     env_path = ROOT / ".env"
     values = dotenv_values(env_path)
+    if not values.get("API_DOMAIN"):
+        raise ValueError("Set API_DOMAIN in root .env to the VPS HTTPS hostname")
     generated = {"DB_ROOT_PASSWORD": secrets.token_hex(32),
-                 "API_DOMAIN": "api." + values["CONTABO_VPS_IP_ADDRESS"] + ".sslip.io",
                  "PRODUCTION_API_ORIGIN": values["PRODUCTION_WEB_ORIGIN"]}
     for key, value in generated.items():
         if not values.get(key):
