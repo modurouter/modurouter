@@ -3,7 +3,15 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from modurouter.billing import admission_lock, admit_run, mark_pending, quota_day, reserve, settle
+from modurouter.billing import (
+    admission_lock,
+    admit_run,
+    mark_pending,
+    quota_day,
+    reserve,
+    settle,
+    usage_summary,
+)
 from modurouter.config import Settings
 from modurouter.errors import AppError
 from modurouter.models import Conversation, GenerationAttempt, QuotaBucket, Run, User
@@ -88,6 +96,61 @@ async def test_same_user_concurrency_and_daily_request_limit(database):
 def test_seoul_midnight_boundary():
     assert str(quota_day(datetime(2026, 9, 17, 14, 59, 59, tzinfo=UTC))) == "2026-09-17"
     assert str(quota_day(datetime(2026, 9, 17, 15, 0, tzinfo=UTC))) == "2026-09-18"
+
+
+@pytest.mark.parametrize(("subject", "limit"), [("guest:test", 30), ("member", 50)])
+async def test_role_request_limit_boundary(database, subject, limit):
+    config = Settings(_env_file=None)
+    async with database.begin() as db:
+        user = User(google_sub=subject, email="", display_name="테스트")
+        db.add(user)
+        await db.flush()
+        await admission_lock(db)
+        summary = await usage_summary(db, user.id, config)
+        assert summary["request_limit"] == summary["remaining_requests"] == limit
+        for _ in range(limit - 1):
+            await admit_run(db, user.id, config)
+        assert (await usage_summary(db, user.id, config))["remaining_requests"] == 1
+        await admit_run(db, user.id, config)
+        assert (await usage_summary(db, user.id, config))["remaining_requests"] == 0
+        with pytest.raises(AppError, match="REQUEST_LIMIT"):
+            await admit_run(db, user.id, config)
+
+
+async def test_admin_unlimited_requests_keep_usage_accounting(database):
+    config = Settings(_env_file=None)
+    async with database.begin() as db:
+        user = User(google_sub="admin:test", email="", display_name="관리자")
+        db.add(user)
+        await db.flush()
+        await admission_lock(db)
+        initial = await usage_summary(db, user.id, config)
+        assert initial["request_limit"] is None and initial["remaining_requests"] is None
+        await admit_run(db, user.id, config)
+        rows = (await db.scalars(select(QuotaBucket))).all()
+        for row in rows:
+            row.request_count = 10000
+        await admit_run(db, user.id, config)
+        assert all(row.request_count == 10001 for row in rows)
+        summary = await usage_summary(db, user.id, config)
+        assert summary["request_limit"] is None and summary["remaining_requests"] is None
+        assert summary["shared_guest_quota"] is False
+
+
+async def test_new_guest_session_cannot_reset_shared_request_limit(database):
+    config = Settings(_env_file=None)
+    async with database.begin() as db:
+        users = [User(google_sub=f"guest:{index}", email="", display_name="비회원")
+                 for index in range(2)]
+        db.add_all(users)
+        await db.flush()
+        await admission_lock(db)
+        for _ in range(30):
+            await admit_run(db, users[0].id, config)
+        summary = await usage_summary(db, users[1].id, config)
+        assert summary["request_limit"] == 30 and summary["remaining_requests"] == 0
+        with pytest.raises(AppError, match="REQUEST_LIMIT"):
+            await admit_run(db, users[1].id, config)
 
 
 async def test_review_recovery_requires_settled_inactive_runs(database):

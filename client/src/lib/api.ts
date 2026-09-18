@@ -54,7 +54,7 @@ export type Run = {run_id:string; status:string; response:string; selected_model
 export type Message = {id:string; run_id:string; role:string; content:string; status:string};
 export type Conversation = {id:string; title:string; updated_at:string};
 export type User = {id:string; display_name:string; email:string; csrf_token:string; guest?:boolean};
-export type Usage = {remaining_requests:number; request_limit:number; spent_usd:string; reserved_usd:string; limit_usd:string; remaining_usd:string; resets_at:string};
+export type Usage = {remaining_requests:number|null; request_limit:number|null; spent_usd:string; reserved_usd:string; limit_usd:string; remaining_usd:string; resets_at:string};
 export type Attachment = {id:string; filename:string; status:string; preview?:string; truncated:boolean; error_code?:string; expires_at:string};
 
 export async function consumeEvents(response: Response, receive: (kind:string, data:Record<string, unknown>) => void) {

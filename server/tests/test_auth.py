@@ -295,7 +295,9 @@ async def test_admin_login_has_member_features_and_persistent_identity(identitie
         conversation = await client.post("/v1/conversations", json={"title": "관리자 회원 대화"}, headers=headers)
         assert conversation.status_code == 200
         cid = conversation.json()["id"]
-        assert (await client.get("/v1/usage")).json()["shared_guest_quota"] is False
+        usage = (await client.get("/v1/usage")).json()
+        assert usage["shared_guest_quota"] is False
+        assert usage["request_limit"] is None and usage["remaining_requests"] is None
         assert (await client.get("/v1/models/status")).status_code == 200
         assert (await client.get(f"/v1/conversations/{identities}")).status_code == 404
         uploaded = await client.post("/v1/attachments", data={"conversation_id": cid},

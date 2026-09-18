@@ -24,7 +24,8 @@ def main():
         "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "OPENROUTER_API_KEY", "MODEL_ALLOWLIST", "ADMIN_USERNAME", "ADMIN_PASSWORD",
         "ZENMUX_API_KEY", "OPENAI_API_KEY", "UPSTAGE_API_KEY",
         "TOOL_MODEL_ALLOWLIST", "INPUT_PRICE_CAP_USD_PER_M", "OUTPUT_PRICE_CAP_USD_PER_M",
-        "USER_DAILY_BUDGET_USD", "USER_DAILY_REQUEST_LIMIT", "MAX_INPUT_TOKENS", "MAX_OUTPUT_TOKENS"}}
+        "USER_DAILY_BUDGET_USD", "USER_DAILY_REQUEST_LIMIT", "GUEST_DAILY_REQUEST_LIMIT",
+        "MAX_INPUT_TOKENS", "MAX_OUTPUT_TOKENS"}}
     payload = "".join(f"{key}='{value}'\n" for key, value in selected.items())
     if any("'" in value or "\n" in value for value in selected.values()):
         raise ValueError("Environment values require safe dotenv serialization")

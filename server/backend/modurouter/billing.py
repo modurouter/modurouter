@@ -16,6 +16,14 @@ SEOUL = ZoneInfo("Asia/Seoul")
 ZERO = Decimal(0)
 
 
+def daily_request_limit(user: User, settings: Settings) -> int | None:
+    if user.google_sub.startswith("admin:"):
+        return None
+    if user.google_sub.startswith(("guest:", "deleted:guest:")):
+        return settings.guest_daily_request_limit
+    return settings.user_daily_request_limit
+
+
 def quota_day(now: datetime | None = None) -> date:
     return (now or datetime.now(UTC)).astimezone(SEOUL).date()
 
@@ -63,7 +71,11 @@ async def admit_run(db: AsyncSession, user_id: str, settings: Settings) -> date:
         raise AppError("CONCURRENCY_LIMIT", "진행 중인 답변이 있습니다. 잠시 후 다시 시도해 주세요.", 429, True)
     day = quota_day()
     rows = await buckets(db, user_id, day, settings)
-    if any(row.request_count >= settings.user_daily_request_limit for row in rows if row.scope != "platform"):
+    owner = await db.get(User, user_id)
+    request_limit = daily_request_limit(owner, settings)
+    if request_limit is not None and any(
+        row.request_count >= request_limit for row in rows if row.scope != "platform"
+    ):
         raise AppError("REQUEST_LIMIT", "오늘의 질문 횟수를 모두 사용했습니다.", 429)
     for row in rows:
         row.request_count += 1
@@ -168,8 +180,10 @@ async def usage_summary(db: AsyncSession, user_id: str, settings: Settings) -> d
             QuotaBucket.scope_id == "shared", QuotaBucket.quota_date == quota_day()))
     spent = row.spent_usd if row else ZERO
     reserved = row.reserved_usd if row else ZERO
-    return {"remaining_requests": max(0, settings.user_daily_request_limit - (row.request_count if row else 0)),
-            "request_limit": settings.user_daily_request_limit, "spent_usd": str(spent),
+    request_limit = daily_request_limit(owner, settings)
+    remaining_requests = None if request_limit is None else max(0, request_limit - (row.request_count if row else 0))
+    return {"remaining_requests": remaining_requests,
+            "request_limit": request_limit, "spent_usd": str(spent),
             "reserved_usd": str(reserved), "limit_usd": str(settings.user_daily_budget_usd),
             "remaining_usd": str(max(ZERO, settings.user_daily_budget_usd - spent - reserved)),
             "resets_at": next_reset(), "shared_guest_quota": guest}
