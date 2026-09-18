@@ -13,6 +13,9 @@ from charset_normalizer import from_bytes
 from PIL import Image
 from pypdf import PdfReader
 
+from .hangul import ERRORS as HANGUL_ERRORS
+from .hangul import HWP_MIME, HWPX_MIME, hangul_text
+
 MAX_TEXT = 20000
 
 
@@ -58,6 +61,8 @@ def extract(path: Path, mime: str):
         if decoded is None or decoded.chaos > 0.2:
             raise ValueError("FILE_ENCODING_INVALID")
         text = str(decoded)
+    elif mime in (HWP_MIME, HWPX_MIME):
+        text = hangul_text(path, mime)
     elif mime == "application/pdf":
         reader = PdfReader(path, strict=False)
         if reader.is_encrypted:
@@ -91,7 +96,7 @@ def main():
     except ValueError as exc:
         code = str(exc)
         allowed = {"FILE_ENCODING_INVALID", "PDF_ENCRYPTED", "PDF_PAGE_LIMIT", "IMAGE_PIXEL_LIMIT",
-                   "OCR_FAILED", "OCR_LOW_CONFIDENCE", "FILE_UNSUPPORTED", "NO_EXTRACTABLE_TEXT"}
+                   "OCR_FAILED", "OCR_LOW_CONFIDENCE", "FILE_UNSUPPORTED", "NO_EXTRACTABLE_TEXT"} | HANGUL_ERRORS
         result = {"error": code if code in allowed else "EXTRACTION_FAILED"}
     except Exception:
         result = {"error": "EXTRACTION_FAILED"}

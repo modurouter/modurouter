@@ -82,8 +82,14 @@ h3 {font-size:16px;line-height:24px}
 .tools {display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .tools button {border:0;background:transparent;padding:4px 8px;font-size:12px}
 .tools button[aria-pressed=true] {background:var(--peer-color-surface-active)}
-.model-routing-note {font-size:12px;margin-bottom:8px;line-height:1.6}
-.model-routing-note span {color:var(--peer-color-ink-muted);margin-left:8px}
+.model-picker {margin-bottom:12px;display:grid;gap:8px}
+.routing-modes {display:flex;gap:4px;flex-wrap:wrap}
+.routing-modes button {font-size:13px;padding:6px 12px;min-height:36px}
+.routing-modes button[aria-pressed="true"] {background:var(--peer-color-ink);color:var(--peer-color-canvas)}
+.model-select-fields {display:grid;grid-template-columns:minmax(120px,1fr) minmax(0,2fr);gap:8px}
+.model-select-fields label {min-width:0}
+.model-select-fields input,.model-select-fields select {width:100%;padding:8px;border:1px solid var(--peer-color-ink);background:var(--peer-color-canvas);font-size:14px;min-height:40px}
+@media(max-width:600px) {.model-select-fields {grid-template-columns:1fr}}
 .composer-note {font-size:12px;color:var(--peer-color-ink-muted);margin-top:12px;text-align:center}
 .status-line {font-size:12px;min-height:24px;padding-bottom:8px;color:var(--peer-color-ink-muted)}
 .error {color:var(--peer-color-danger);font-size:13px;line-height:1.6;padding:12px 0}
@@ -130,3 +136,39 @@ h3 {font-size:16px;line-height:24px}
 
 button.primary:disabled {background:var(--peer-color-surface-active);color:var(--peer-color-disabled);border-color:var(--peer-color-disabled)}
 .context-notice {color:var(--peer-color-ink);margin-top:12px}
+
+.admin-workspace {max-width:1240px;margin:0 auto;padding:40px 32px 0}
+.admin-heading {display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding-bottom:32px;border-bottom:1px solid var(--peer-color-ink)}
+.admin-heading h1 {margin-top:28px;margin-bottom:8px}
+.admin-fields {border:0;padding:0;margin:0;min-width:0}
+.admin-section {display:grid;grid-template-columns:240px minmax(0,1fr);gap:40px;padding:32px 0;border-bottom:1px solid var(--peer-color-ink)}
+.admin-section h2 {margin-bottom:8px}
+.admin-form-stack,.admin-provider-list {display:grid;gap:16px;min-width:0}
+.admin-provider {display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;border-bottom:1px solid var(--peer-color-ink-muted)}
+.admin-provider>span:first-child,.admin-checkbox {display:flex;gap:10px;align-items:center}
+.admin-workspace input[type=checkbox] {width:18px;height:18px;accent-color:var(--peer-color-ink);flex-shrink:0}
+.admin-workspace select,.admin-workspace input:not([type=checkbox]),.admin-workspace textarea {display:block;width:100%;min-height:42px;margin-top:6px;padding:8px 10px;background:var(--peer-color-canvas);border:1px solid var(--peer-color-ink);font-size:14px}
+.admin-workspace textarea {resize:vertical;font-family:monospace;font-size:12px}
+.admin-limit-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.admin-model-filters {display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.admin-model-table {overflow:auto;max-height:480px;border-top:1px solid var(--peer-color-ink)}
+.admin-model-table table {width:100%;border-collapse:collapse;text-align:left}
+.admin-model-table th {position:sticky;top:0;background:var(--peer-color-canvas);font-size:12px;white-space:nowrap}
+.admin-model-table td,.admin-model-table th {padding:12px 8px;border-bottom:1px solid var(--peer-color-ink-muted)}
+.admin-model-table td:first-child {min-width:200px;overflow-wrap:anywhere;word-break:break-word}
+.admin-model-table td:first-child span {display:block}
+.admin-model-table td:nth-child(2) {min-width:100px}
+.admin-workspace details>label {display:block;margin-top:16px}
+.admin-workspace details>p {margin-top:12px}
+.admin-feedback {padding:16px 0}
+.admin-save-bar {position:sticky;bottom:0;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 0;background:var(--peer-color-canvas);border-top:1px solid var(--peer-color-ink);z-index:1}
+.admin-save-actions {display:flex;gap:8px}
+@media(max-width:760px) {
+  .admin-workspace {padding:24px 16px 0}
+  .admin-section {grid-template-columns:1fr;gap:20px}
+  .admin-heading {gap:12px}
+  .admin-heading>.button {flex-shrink:0}
+  .admin-save-bar {align-items:stretch;flex-direction:column;gap:12px}
+  .admin-save-actions {display:grid;grid-template-columns:1fr 1fr}
+  .admin-limit-grid {grid-template-columns:1fr}
+}

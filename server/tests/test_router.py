@@ -64,3 +64,53 @@ async def test_atomic_refresh_caps_allowlist_and_stale(database):
         await db.commit()
         with pytest.raises(AppError, match="PRICE_DATA_STALE"):
             await candidates(db, config, 1000)
+
+
+@pytest.mark.parametrize('raw', [
+    {'mode':'manual'}, {'mode':'manual','provider':'zenmux'},
+    {'mode':'auto','model_id':'test/model'}, {'mode':'free','provider':'openrouter'},
+    {'mode':'unknown'}, {'mode':'manual','provider':'unknown','model_id':'test/model'},
+])
+def test_routing_preference_rejects_ambiguous_selection(raw):
+    from modurouter.router import RoutingPreference
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        RoutingPreference(**raw)
+
+
+async def test_free_and_explicit_routes_use_catalog_without_automatic_price_cap(database):
+    from modurouter.router import RoutingPreference, model_catalog
+    config = Settings(_env_file=None, openrouter_api_key='test', zenmux_api_key='test',
+        model_allowlist='test/model', input_price_cap_usd_per_m='0.25', output_price_cap_usd_per_m='1')
+    class Catalog:
+        code = 'openrouter'
+        async def list_models(self):
+            return [model(), model('test/premium','0.000003','0.000015'), model('test/free','0','0')]
+    async with database() as db:
+        await sync_models(db, Catalog(), config)
+        zen = Catalog()
+        zen.code = 'zenmux'
+        await sync_models(db, zen, config)
+        assert {c.model_id for c in await candidates(db,config,100)} == {'test/model'}
+        free = await candidates(db,config,100,routing=RoutingPreference(mode='free'))
+        assert {c.provider_code for c in free} == {'openrouter','zenmux'}
+        assert all(c.model_id == 'test/free' and c.reserved_usd == 0 for c in free)
+        manual = RoutingPreference(mode='manual',provider='zenmux',model_id='test/premium')
+        chosen = await candidates(db,config,100,routing=manual)
+        assert len(chosen) == 1 and chosen[0].provider_code == 'zenmux'
+        assert chosen[0].reserved_usd == Decimal('0.01566')
+        catalog = await model_catalog(db,config)
+        assert len(catalog['models']) == 6
+        assert next(m for m in catalog['models'] if m['model_id']=='test/premium')['auto_eligible'] is False
+        with pytest.raises(AppError,match='SELECTED_MODEL_UNAVAILABLE'):
+            await candidates(db,config,100,True,manual)
+        with pytest.raises(AppError,match='SELECTED_MODEL_UNAVAILABLE'):
+            await candidates(db,config,8000,routing=manual)
+        with pytest.raises(AppError,match='NO_FREE_MODEL'):
+            await candidates(db,config,8000,routing=RoutingPreference(mode='free'))
+        await db.rollback()
+        state = await db.get(SyncState,'zenmux')
+        state.last_success_at = utcnow() - timedelta(hours=1)
+        await db.commit()
+        with pytest.raises(AppError,match='SELECTED_MODEL_UNAVAILABLE'):
+            await candidates(db,config,100,routing=manual)

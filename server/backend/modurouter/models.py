@@ -72,6 +72,8 @@ class Run(Base):
     request_hash: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(24), default="accepted", index=True)
     selected_model: Mapped[str | None] = mapped_column(String(255))
+    selected_provider: Mapped[str | None] = mapped_column(String(32))
+    routing: Mapped[dict | None] = mapped_column(JSON)
     error_code: Mapped[str | None] = mapped_column(String(64))
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     context_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -224,3 +226,12 @@ for table in Base.metadata.tables.values():
     table.dialect_options["mysql"]["engine"] = "InnoDB"
     table.dialect_options["mysql"]["charset"] = "utf8mb4"
     table.dialect_options["mysql"]["collate"] = "utf8mb4_bin"
+
+
+class RuntimeSettings(Base):
+    __tablename__ = "runtime_settings"
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    values: Mapped[dict] = mapped_column(JSON)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_by: Mapped[str | None] = mapped_column(String(36))
+    updated_at: Mapped[datetime] = mapped_column(timestamp, default=utcnow)

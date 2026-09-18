@@ -1,13 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import {useRouter} from 'next/navigation';
+import SettingsPanel from './settings-panel';
 import {useEffect, useRef, useState, type FormEvent} from 'react';
 import {ArrowUpRight} from 'lucide-react';
 import {api, ApiError, type User} from '@/lib/api';
 
 export default function AdminLogin() {
-  const router = useRouter();
+  const [user,setUser]=useState<User|null>(null);
   const submitting = useRef(false);
   const [checking, setChecking] = useState(true);
   const [pending, setPending] = useState(false);
@@ -17,8 +17,7 @@ export default function AdminLogin() {
     let live = true;
     api<User>('/v1/me').then(user => {
       if (!live) return;
-      if (user.guest) setChecking(false);
-      else router.replace('/');
+      setUser(user);setChecking(false);
     }).catch((reason: unknown) => {
       if (!live) return;
       if (!(reason instanceof ApiError && reason.status === 401)) {
@@ -27,7 +26,7 @@ export default function AdminLogin() {
       setChecking(false);
     });
     return () => { live = false; };
-  }, [router]);
+  }, []);
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,9 +40,9 @@ export default function AdminLogin() {
       await api('/auth/admin', {method: 'POST', body: JSON.stringify({
         username: values.get('username'), password: values.get('password'),
       })});
-      await api<User>('/v1/me');
+      const session=await api<User>('/v1/me');
       form.reset();
-      window.location.replace('/');
+      setUser(session);setPending(false);submitting.current=false;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '로그인하지 못했습니다. 다시 시도해 주세요.');
       submitting.current = false;
@@ -51,11 +50,13 @@ export default function AdminLogin() {
     }
   }
 
+  if(user?.admin)return <SettingsPanel user={user}/>;
+
   return <main className="admin-login">
     <section className="admin-login-content" aria-labelledby="admin-title">
       <Link href="/" className="brand"><span className="brand-mark" aria-hidden="true"><i/><i/><i/><i/></span>모두라우터</Link>
       <h1 id="admin-title">관리자 로그인</h1>
-      <p className="muted">아이디와 비밀번호로 로그인하세요. 로그인 후 모든 회원 기능을 사용할 수 있습니다.</p>
+      <p className="muted">관리자 계정으로 로그인해 모델과 라우팅 설정을 관리하세요.</p>
       {checking ? <p role="status">로그인 상태를 확인하고 있습니다.</p> : <form className="admin-login-form" onSubmit={login} aria-busy={pending}>
         <label htmlFor="admin-username">아이디</label>
         <input id="admin-username" name="username" autoComplete="username" required maxLength={255} disabled={pending} aria-describedby={error ? 'admin-error' : undefined}/>

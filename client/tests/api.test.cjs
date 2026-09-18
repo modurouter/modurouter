@@ -118,10 +118,14 @@ test('restoring draft files never hides authentication failures', async () => {
 test('attachment failures explain recovery for every extractor error', () => {
   for (const code of ['PDF_ENCRYPTED', 'PDF_PAGE_LIMIT', 'NO_EXTRACTABLE_TEXT', 'FILE_ENCODING_INVALID',
     'IMAGE_PIXEL_LIMIT', 'OCR_LOW_CONFIDENCE', 'OCR_FAILED', 'OCR_TIMEOUT', 'EXTRACTION_TIMEOUT',
-    'WORKER_INTERRUPTED', 'FILE_UNSUPPORTED', 'UPLOAD_FAILED', 'EXTRACTION_FAILED']) {
+    'WORKER_INTERRUPTED', 'FILE_UNSUPPORTED', 'UPLOAD_FAILED', 'EXTRACTION_FAILED',
+    'HWP_ENCRYPTED', 'HWP_PROTECTED', 'HWP_INVALID', 'HWP_VERSION_UNSUPPORTED', 'HWP_SIZE_LIMIT']) {
     assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: code}), /첨부/);
   }
   assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: 'PDF_ENCRYPTED'}), /암호를 해제/);
+  assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: 'HWP_ENCRYPTED'}), /암호를 해제/);
+  assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: 'HWP_VERSION_UNSUPPORTED'}), /HWPX/);
+  assert.match(exportsObject.attachmentErrorMessage({status: 'failed', error_code: 'HWP_INVALID'}), /손상/);
   assert.match(exportsObject.runErrorMessage('ATTACHMENT_EXPIRED'), /원문.*다시 첨부/);
   assert.equal(exportsObject.attachmentErrorMessage({status: 'ready'}), null);
 });

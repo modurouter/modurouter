@@ -562,6 +562,39 @@ async def ready_attachment(database, cid, text, filename="notice.txt"):
         return row.id
 
 
+@pytest.mark.parametrize("extension", ["HWP", "hwpx"])
+async def test_hangul_upload_worker_preview_and_followup(world, provider, database, monkeypatch, tmp_path, extension):
+    from hangul_fixtures import hwp, hwpx
+    from modurouter import files, worker
+    from modurouter.hangul import HWP_MIME, HWPX_MIME
+    from modurouter.models import Attachment, Job
+
+    monkeypatch.setattr(files.settings, "upload_directory", tmp_path)
+    monkeypatch.setattr(worker, "Session", database)
+    monkeypatch.setattr(harness.settings, "max_model_calls_per_run", 1)
+    client, cid = world
+    content = hwp() if extension == "HWP" else hwpx()
+    # Browsers often supply an empty/generic MIME for these extensions.
+    uploaded = await client.post("/v1/attachments", data={"conversation_id": cid},
+                                 files={"file": (f"회의자료.{extension}", content, "application/octet-stream")})
+    assert uploaded.status_code == 200, uploaded.text
+    aid = uploaded.json()["id"]
+    assert uploaded.json()["status"] == "queued"
+    async with database() as db:
+        assert (await db.get(Attachment, aid)).mime_type == (HWP_MIME if extension == "HWP" else HWPX_MIME)
+        assert (await db.scalar(select(Job).where(Job.type == "extract"))).payload["attachment_id"] == aid
+    await worker.process_extraction(aid)
+    preview = (await client.get(f"/v1/attachments/{aid}")).json()
+    assert preview["status"] == "ready" and preview["preview"].strip() == "한글 문서 본문"
+    for index, attachments in enumerate(([aid], [])):
+        result = await client.post(f"/v1/conversations/{cid}/runs", headers={"Idempotency-Key": f"hangul-{index}"},
+                                   json={"message": "첨부한 한글 문서를 요약해 줘", "attachment_ids": attachments})
+        assert '"status": "completed"' in result.text
+        assert aid in result.text
+        assert any(json.loads(message["content"]).get("text", "").strip() == "한글 문서 본문"
+                   for message in provider.messages[-1] if message["content"].startswith('{"untrusted_source"'))
+
+
 async def test_followup_restores_original_attachment_and_sources(world, provider, database, monkeypatch):
     monkeypatch.setattr(harness.settings, "max_model_calls_per_run", 1)
     client, cid = world
@@ -646,3 +679,62 @@ async def test_followup_keeps_multiple_files_and_replaces_with_new_set(world, pr
         assert any("NEW ORIGINAL" in m["content"] for m in provider.messages[-1])
         assert all("FIRST ORIGINAL" not in m["content"] and "SECOND ORIGINAL" not in m["content"]
                    for m in provider.messages[-1])
+
+
+async def test_manual_selection_is_persisted_and_never_falls_back(world, provider):
+    client, conversation = world
+    provider.error = 429
+    body = {'message':'질문', 'routing':{'mode':'manual','provider':'openrouter','model_id':'test/a'}}
+    response = await client.post(f'/v1/conversations/{conversation}/runs', json=body)
+    assert response.status_code == 200
+    assert provider.calls == ['test/a']
+    same = await client.post(f'/v1/conversations/{conversation}/runs', json=body)
+    run = same.json()
+    assert run['status'] == 'failed'
+    assert run['routing'] == body['routing']
+    assert run['selected_provider'] == 'openrouter'
+    body['routing']['model_id'] = 'test/b'
+    conflict = await client.post(f'/v1/conversations/{conversation}/runs', json=body)
+    assert conflict.status_code == 409
+    assert provider.calls == ['test/a']
+
+
+async def test_premium_selection_reaches_provider_with_matching_price_ceiling(world, database, monkeypatch):
+    from modurouter.providers import OpenRouterAdapter
+    from test_router import model
+    client, conversation = world
+    class Catalog:
+        async def list_models(self):
+            return [model('test/premium','0.000003','0.000015')]
+    async with database() as db:
+        await sync_models(db,Catalog(),harness.settings)
+    captured = []
+    def reply(request):
+        payload = json.loads(request.content)
+        captured.append(payload)
+        return httpx.Response(200, text='data: {"id":"premium-gen","choices":[{"delta":{"content":"고성능 답변"}}]}\n\ndata: {"usage":{"cost":0.001,"prompt_tokens":20,"completion_tokens":10}}\n\ndata: [DONE]\n\n')
+    monkeypatch.setattr(harness,'create_adapters',lambda config:{'openrouter':OpenRouterAdapter(config,httpx.AsyncClient(transport=httpx.MockTransport(reply)))})
+    body = {'message':'질문','routing':{'mode':'manual','provider':'openrouter','model_id':'test/premium'}}
+    response = await client.post(f'/v1/conversations/{conversation}/runs',json=body)
+    assert response.status_code == 200
+    assert captured[0]['model'] == 'test/premium'
+    assert captured[0]['provider']['max_price'] == {'prompt':3,'completion':15,'request':0}
+    saved = (await client.post(f'/v1/conversations/{conversation}/runs',json=body)).json()
+    assert saved['status'] == 'completed'
+    assert Decimal(saved['cost_usd']) == Decimal('0.001')
+    assert harness.settings.input_price_cap_usd_per_m == Decimal('0.25')
+
+
+async def test_free_only_rejects_paid_catalog_before_admission(world, database, provider):
+    from test_router import model
+    client, conversation = world
+    class Catalog:
+        async def list_models(self):
+            return [model('test/a')]
+    async with database() as db:
+        await sync_models(db,Catalog(),harness.settings)
+    response = await client.post(f'/v1/conversations/{conversation}/runs',json={'message':'질문','routing':{'mode':'free'}})
+    assert response.status_code == 503 and response.json()['code'] == 'NO_FREE_MODEL'
+    assert provider.calls == []
+    async with database() as db:
+        assert await db.scalar(select(func.count()).select_from(Run)) == 0

@@ -2,7 +2,7 @@
 
 Korean AI harness: FastAPI, MariaDB, OpenRouter, ZenMux, OpenAI, Upstage and Next.js.
 
-The prototype is deployed at https://modurouter.today. Visitors can use the service immediately without signing in, or optionally sign in with Google. The `/admin` page accepts the server-configured username and password and opens the same member workspace. The home page automatically creates a private guest session through `/auth/guest` when no valid session exists. Guest cookies are session-only. Guests can ask questions and attach files, and share the configured daily request and cost limits. Guest conversations stay separate from signed-in accounts and are not transferred on login. Native browser Korean voice input and readout have been tested; physical microphone and speaker quality were not measured. The acceptance checklist and explicit scope decisions are in [docs/phase-1.md](docs/phase-1.md).
+The prototype is deployed at https://modurouter.today. Visitors can use the service immediately without signing in, or optionally sign in with Google. The `/admin` page accepts the server-configured username and password and opens the routing administration panel. The home page automatically creates a private guest session through `/auth/guest` when no valid session exists. Guest cookies are session-only. Guests can ask questions and attach files, and share the configured daily request and cost limits. Guest conversations stay separate from signed-in accounts and are not transferred on login. Native browser Korean voice input and readout have been tested; physical microphone and speaker quality were not measured. The acceptance checklist and explicit scope decisions are in [docs/phase-1.md](docs/phase-1.md).
 The selected `modurouter.today` deployment uses a same-origin Vercel proxy for auth and API requests to `api.modurouter.today`.
 
 ## Local backend
@@ -22,7 +22,7 @@ Run the worker separately:
 uv run python -m modurouter.worker
 ```
 
-The API never creates tables at startup. Run Alembic migrations explicitly. Missing budget configuration defaults to zero paid spending; missing model allowlists stop model calls. Google login reports an unavailable state when credentials are absent.
+The API never creates tables at startup. Run Alembic migrations explicitly. Missing budget configuration defaults to zero paid spending; missing automatic model allowlists stop automatic model calls. Google login reports an unavailable state when credentials are absent.
 
 ## Login configuration
 
@@ -46,10 +46,10 @@ in root `.env` enable the corresponding adapters. ZenMux must use a PAYG key.
 Model IDs in `MODEL_ALLOWLIST` and `TOOL_MODEL_ALLOWLIST` are canonical names such
 as `openai/gpt-4o-mini` or `upstage/solar-pro-3`. A bare canonical name permits any
 configured provider that offers it. Use `zenmux::openai/gpt-4o-mini` to permit only
-one route. Empty allowlists continue to disable model calls. Credentials for one
+one route. Empty automatic allowlists disable automatic routing. Explicit free and manual selection use the priced text catalog, subject to the administrator's separate selectable-model list. Credentials for one
 provider are never sent to another provider or to the browser.
 
-The router compares eligible routes across configured providers, within the existing
+Automatic routing compares eligible routes across enabled providers, within the existing
 price caps and user budgets. Each provider has its own atomic catalog refresh and
 freshness state. An unavailable or stale provider does not disable healthy routes.
 The single fallback prefers a different provider; partial answers are never retried.
@@ -83,6 +83,34 @@ reconciles it. Missing billing data never settles as zero.
 configured provider. Apply migration `0005` before running the updated API/worker.
 Compose and deployment scripts forward all four model keys from the root `.env`.
 The quality evaluator accepts `--provider openrouter|zenmux|openai|upstage`.
+
+## User model choice and administration
+
+Apply migrations through `0007` before running this version. The composer offers automatic
+cost ordering, free-only routing, and explicit provider/model selection. Free-only requests
+never fall back to paid models. Explicit selection does not substitute another model or
+provider and is allowed above the automatic price caps. OpenRouter receives the selected
+catalog price as its request ceiling. Daily budgets still apply. Tool planning requires a
+model on the tool allowlist in every mode. Prices come from the current catalog; a low
+price alone is not labeled a discount. The saved run records its requested routing mode
+and the provider used for the answer.
+
+`/admin` now provides authenticated routing controls. `GET/POST /v1/admin/settings`
+reads or saves the non-secret policy in `runtime_settings`. It covers provider activation,
+automatic and tool allowlists, selectable models, the default routing mode and model,
+manual-selection availability, budgets, request limits, token limits, execution limits,
+and price refresh/freshness intervals. Changes take effect for newly admitted requests;
+an in-flight run retains its configuration. The worker reads the stored price refresh
+interval. A revision check rejects concurrent stale saves. Existing idempotent requests
+retain their original route even when the default changes.
+
+Keys and admin login credentials remain solely in root `.env`. The panel exposes only
+whether each provider key exists. Ordinary members and guests cannot access admin APIs.
+`GET /v1/admin/models` includes priced models from disabled providers so administrators
+can enable them. `POST /v1/admin/models/refresh` refreshes catalogs without a model call.
+Before the first save, the non-secret policy falls back to `.env` defaults. Subsequent
+admin saves persist across API and worker restarts. A null selectable-model list permits
+the whole valid catalog; an empty list permits no free or manual model selections.
 
 ## Deployment configuration
 
@@ -131,6 +159,28 @@ After investigating a reservation overrun and verifying the current model prices
 Vercel deployment reads the token from root `.env` and passes it through the child process environment, not command-line arguments. Browser CSP restricts resource origins and disables objects and framing; inline scripts remain allowed for the current Next.js rendering setup.
 
 ## Attachment recovery
+
+The composer accepts HWP and HWPX alongside TXT, PDF, PNG and JPG. HWP 5 documents
+are read from their actual body sections, including compressed and distribution
+documents. Nested paragraph text in tables, text boxes, headers, footers and notes
+is retained, as is equation source text. HWPX sections follow the package's spine
+order. Preview streams are never used as a substitute for the full body.
+
+Extraction is text based: original page layout, embedded images and charts are not
+rendered or OCRed. Image-only documents must be attached as PNG/JPG for OCR. HWP 3
+(Hancom 97) and earlier formats require saving as HWPX. Password encryption and
+DRM require an unlocked copy; they report specific recovery messages. The existing
+20,000-character extraction cap and model context cap still apply, with truncation
+shown in the preview and answer. The PDF-specific 20-page cap does not apply to HWP.
+
+HWP containers and HWPX package signatures are checked independently of browser
+MIME values. Parsing runs in the existing bounded worker subprocess, with internal
+stream, decompression and XML limits. DTDs and external XML entities are rejected.
+The new Python dependencies are included in `uv.lock` and the existing Docker
+build; no desktop office installation or external document service is required.
+Run `uv run pytest -q tests/test_hangul.py tests/test_extract.py` for format cases.
+The harness integration tests also exercise upload, worker extraction, preview,
+model context and follow-up questions with generated HWP/HWPX documents.
 
 The composer saves pending attachment IDs and filenames per account and conversation in session storage. Reloading refreshes each attachment from the API. Unavailable or expired files remain visible with recovery instructions and block submission until resolved or removed. Extracted file content is not copied into browser storage. Network failures preserve the question and explain how to retry.
 

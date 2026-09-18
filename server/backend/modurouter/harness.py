@@ -22,7 +22,8 @@ from .errors import AppError
 from .files import owned_attachment
 from .models import GenerationAttempt, Message, Run, ToolRun, UsageLedger, User
 from .providers import ProviderError, create_adapters, usage_cost
-from .router import candidates, estimate_tokens
+from .router import RoutingPreference, candidates, estimate_tokens
+from .runtime_config import effective_settings
 from .tools import FinalPlan, parse_plan, read_url, search_web
 
 router = APIRouter(prefix="/v1")
@@ -67,6 +68,7 @@ class RunInput(BaseModel):
     message: str = Field(min_length=1, max_length=12000)
     attachment_ids: list[str] = Field(default_factory=list, max_length=3)
     search_enabled: bool = False
+    routing: RoutingPreference | None = None
     explanation_mode: Literal["standard", "simple"] = "standard"
 
 
@@ -87,6 +89,7 @@ async def run_view(db, run):
         UsageLedger.attempt_id == GenerationAttempt.id).where(GenerationAttempt.run_id == run.id))).all()
     cost_sources = {row.cost_source or "provider" for row in ledgers if row.status == "settled"}
     return {"run_id": run.id, "status": run.status, "selected_model": run.selected_model,
+            "selected_provider": run.selected_provider, "routing": run.routing or {"mode": "auto"},
             "error_code": run.error_code, "response": response or "", "context_truncated": run.context_truncated,
             "cost_usd": str(sum((a.actual_usd or Decimal(0)) for a in attempts)),
             "pending_usd": str(sum(a.reserved_usd for a in attempts if a.status != "settled")),
@@ -145,10 +148,13 @@ def build_context(history: list[dict], question: str, sources: list[dict], simpl
 
 
 class Execution:
-    def __init__(self, run_id: str, user_id: str, body: RunInput, queue: asyncio.Queue, request_id: str):
+    def __init__(self, run_id: str, user_id: str, body: RunInput, queue: asyncio.Queue, request_id: str, config=None):
+        self.settings = config or settings
+        if body.routing is None:
+            body = body.model_copy(update={"routing": RoutingPreference(**self.settings.default_routing)})
         self.run_id, self.user_id, self.body, self.queue = run_id, user_id, body, queue
         self.request_id = request_id
-        self.adapters = create_adapters(settings)
+        self.adapters = create_adapters(self.settings)
         self.sources = []
         self.attachment_ids = list(body.attachment_ids)
         self.seq = 0
@@ -157,6 +163,7 @@ class Execution:
         self.model_count = 0
         self.fallback_used = False
         self.selected_model = None
+        self.selected_provider = None
         self.last_save = 0
         self.page_read_failed = False
 
@@ -184,13 +191,17 @@ class Execution:
                 run.error_code = error
             run.selected_model = self.selected_model
 
-    async def select_model(self, model):
-        if model == self.selected_model:
+    async def select_model(self, model, provider):
+        if model == self.selected_model and provider == self.selected_provider:
             return
         self.selected_model = model
+        self.selected_provider = provider
         async with Session.begin() as db:
-            (await db.get(Run, self.run_id)).selected_model = model
-        await self.emit("model", selected_model=model)
+            run = await db.get(Run, self.run_id)
+            run.selected_model = model
+            run.selected_provider = provider
+        await self.emit("model", selected_model=model, selected_provider=provider,
+                        routing=self.body.routing.model_dump())
 
     async def add_sources(self, name, result, elapsed=0, error=None):
         safe = []
@@ -205,7 +216,7 @@ class Execution:
                            status="failed" if error else "completed", latency_ms=elapsed, error_code=error))
 
     async def tool(self, name, arguments):
-        if self.tool_count >= settings.max_tool_calls_per_run:
+        if self.tool_count >= self.settings.max_tool_calls_per_run:
             raise AppError("TOOL_CALL_LIMIT", "자료를 읽는 횟수 제한에 도달했습니다.")
         self.tool_count += 1
         await self.status("tool")
@@ -253,12 +264,12 @@ class Execution:
                     "scope": "attachment", "truncated": row.truncated}
 
     async def call_model(self, messages, internal=False):
-        if estimate_tokens(messages) > settings.max_input_tokens:
+        if estimate_tokens(messages) > self.settings.max_input_tokens:
             raise AppError("INPUT_TOO_LONG", "입력 한도를 초과했습니다. 질문이나 자료를 줄여 주세요.")
         async with Session() as db:
-            choices = await candidates(db, settings, estimate_tokens(messages),
-                                       bool(self.body.search_enabled or self.body.attachment_ids or internal))
-        call_limit = settings.max_model_calls_per_run - int(internal)
+            choices = await candidates(db, self.settings, estimate_tokens(messages),
+                                       bool(self.body.search_enabled or self.attachment_ids or internal), self.body.routing)
+        call_limit = self.settings.max_model_calls_per_run - int(internal)
         routes = choices[:1]
         if len(choices) > 1:
             routes.append(next((c for c in choices[1:] if c.provider_code != choices[0].provider_code), choices[1]))
@@ -267,7 +278,7 @@ class Execution:
                 raise AppError("MODEL_CALL_LIMIT", "답변 처리 횟수 제한에 도달했습니다.")
             self.model_count += 1
             async with Session() as db:
-                attempt = await reserve(db, self.run_id, candidate.model_id, candidate.reserved_usd, settings,
+                attempt = await reserve(db, self.run_id, candidate.model_id, candidate.reserved_usd, self.settings,
                                         candidate.provider_code, candidate.price_data)
             attempt_id = attempt.id
             generation_id = None
@@ -283,10 +294,18 @@ class Execution:
             try:
                 await self.status("model")
                 if not internal:
-                    await self.select_model(candidate.model_id)
+                    await self.select_model(candidate.model_id, candidate.provider_code)
                 submitted = True
                 adapter = self.adapters[candidate.provider_code]
-                async for event in adapter.stream_chat(candidate.model_id, messages, settings.max_output_tokens):
+                if hasattr(adapter, "settings"):
+                    # Pin free calls to zero even in automatic mode. A manual call
+                    # accepts the selected catalog tariff, not the cheap auto cap.
+                    exact_price = self.body.routing.mode != "auto" or candidate.reserved_usd == 0
+                    adapter.settings = self.settings.model_copy(update={
+                        "input_price_cap_usd_per_m": candidate.input_per_m if exact_price else self.settings.input_price_cap_usd_per_m,
+                        "output_price_cap_usd_per_m": candidate.output_per_m if exact_price else self.settings.output_price_cap_usd_per_m,
+                    })
+                async for event in adapter.stream_chat(candidate.model_id, messages, self.settings.max_output_tokens):
                     if event.get("id") and not generation_id:
                         generation_id = event["id"]
                         async with Session.begin() as db:
@@ -295,7 +314,7 @@ class Execution:
                     actual_model = event.get("model") or actual_model
                     actual_provider = event.get("provider") or actual_provider
                     if not internal and actual_model:
-                        await self.select_model(actual_model)
+                        await self.select_model(actual_model, candidate.provider_code)
                     if event.get("usage"):
                         usage = event["usage"]
                         async with Session.begin() as db:
@@ -384,10 +403,10 @@ class Execution:
                         rejected = failure and failure.not_billable
                         cost = usage_cost(candidate.provider_code, usage, candidate.price_data)
                         if not submitted or (rejected and not generation_id and not usage):
-                            await settle(db, attempt_id, Decimal(0), 0, 0, None, settings)
+                            await settle(db, attempt_id, Decimal(0), 0, 0, None, self.settings)
                         elif cost is not None:
                             await settle(db, attempt_id, cost[0], usage.get("prompt_tokens"),
-                                         usage.get("completion_tokens"), generation_id, settings, cost[1])
+                                         usage.get("completion_tokens"), generation_id, self.settings, cost[1])
                         else:
                             await mark_pending(db, attempt_id, generation_id, failure.code if failure else "USAGE_PENDING")
                 accounting_task = asyncio.create_task(account())
@@ -422,7 +441,7 @@ class Execution:
         started = time.monotonic()
         await self.emit("meta", status="accepted")
         try:
-            async with asyncio.timeout(settings.run_timeout_seconds):
+            async with asyncio.timeout(self.settings.run_timeout_seconds):
                 await self.status("preparing")
                 await self.restore_attachment_context()
                 for identifier in self.attachment_ids:
@@ -446,35 +465,35 @@ class Execution:
                         Message.run_id != self.run_id, Message.status == "completed").order_by(Message.created_at))).all()
                     history = [{"role": m.role, "content": m.content} for m in rows]
                 messages, truncated = build_context(history, self.body.message, self.sources,
-                    self.body.explanation_mode == "simple", settings.max_input_tokens,
+                    self.body.explanation_mode == "simple", self.settings.max_input_tokens,
                     self.page_read_failed)
                 if truncated:
                     async with Session.begin() as db:
                         run = await db.get(Run, self.run_id)
                         run.context_truncated = True
                     await self.emit("status", status="context_truncated", message="입력 한도에 맞춰 이전 대화나 자료 일부를 제외했습니다.")
-                if (self.sources and self.tool_count < settings.max_tool_calls_per_run
-                        and settings.max_model_calls_per_run > 1):
+                if (self.sources and self.tool_count < self.settings.max_tool_calls_per_run
+                        and self.settings.max_model_calls_per_run > 1):
                     planning = [{"role": "system", "content": PLANNER}] + messages[1:] + [
                         {"role": "user", "content": '위 질문에 대한 답변을 쓰지 마세요. 자료가 충분하면 {"type":"final"}만, 부족하면 tool JSON만 반환하세요. 코드 블록도 쓰지 마세요.'}]
-                    while estimate_tokens(planning) > settings.max_input_tokens and len(planning) > 2:
+                    while estimate_tokens(planning) > self.settings.max_input_tokens and len(planning) > 2:
                         planning.pop(1)
                     raw = await self.call_model(planning, internal=True)
                     try:
                         plan = parse_plan(raw)
                     except AppError:
-                        if self.model_count >= settings.max_model_calls_per_run - 1:
+                        if self.model_count >= self.settings.max_model_calls_per_run - 1:
                             raise
                         repair = [{"role": "assistant", "content": raw[:2000]},
                             {"role": "user", "content": '형식이 올바르지 않습니다. 설명은 제외하고 {"type":"final"} 또는 정해진 tool 객체만 반환하세요.'}]
-                        while estimate_tokens(planning + repair) > settings.max_input_tokens and len(planning) > 2:
+                        while estimate_tokens(planning + repair) > self.settings.max_input_tokens and len(planning) > 2:
                             planning.pop(1)
                         raw = await self.call_model(planning + repair, internal=True)
                         plan = parse_plan(raw)
                     if not isinstance(plan, FinalPlan):
                         await self.tool(plan.tool.name, plan.tool.arguments.model_dump())
                         messages, extra_truncated = build_context(history, self.body.message, self.sources,
-                            self.body.explanation_mode == "simple", settings.max_input_tokens,
+                            self.body.explanation_mode == "simple", self.settings.max_input_tokens,
                             self.page_read_failed)
                         if extra_truncated:
                             async with Session.begin() as db:
@@ -532,12 +551,15 @@ async def create_run(conversation_id: str, body: RunInput, request: Request,
     await db.commit()
     async with db.begin():
         await admission_lock(db)
+        config = await effective_settings(db, settings)
         conversation = await owned_conversation(db, user_id, conversation_id)
         existing = await db.scalar(select(Run).where(Run.user_id == user_id, Run.idempotency_key == idempotency_key))
         if existing:
             if existing.request_hash != request_hash:
                 raise AppError("IDEMPOTENCY_CONFLICT", "같은 요청 번호에 다른 내용이 포함되었습니다.", 409)
             return await run_view(db, existing)
+        if body.routing is None:
+            body = body.model_copy(update={"routing": RoutingPreference(**config.default_routing)})
         if not body.message.strip() or len(set(body.attachment_ids)) != len(body.attachment_ids):
             raise AppError("INPUT_INVALID", "질문과 첨부파일을 확인해 주세요.")
         for identifier in body.attachment_ids:
@@ -546,12 +568,12 @@ async def create_run(conversation_id: str, body: RunInput, request: Request,
                 raise AppError("NOT_FOUND", "첨부파일을 찾을 수 없습니다.", 404)
             if file.extraction_status != "ready" or file.expires_at <= utcnow():
                 raise AppError("ATTACHMENT_NOT_READY", "첨부파일 처리가 끝난 뒤 전송해 주세요.")
-        initial, _ = build_context([], body.message, [], body.explanation_mode == "simple", settings.max_input_tokens)
-        await candidates(db, settings, estimate_tokens(initial), bool(body.search_enabled or body.attachment_ids))
-        day = await admit_run(db, user_id, settings)
+        initial, _ = build_context([], body.message, [], body.explanation_mode == "simple", config.max_input_tokens)
+        await candidates(db, config, estimate_tokens(initial), bool(body.search_enabled or body.attachment_ids), body.routing)
+        day = await admit_run(db, user_id, config)
         run_id = new_id()
         db.add(Run(id=run_id, user_id=user_id, conversation_id=conversation_id, idempotency_key=idempotency_key,
-                   request_hash=request_hash, quota_date=day))
+                   request_hash=request_hash, quota_date=day, routing=body.routing.model_dump()))
         await db.flush()
         db.add(Message(conversation_id=conversation_id, run_id=run_id, role="user", content=body.message, status="completed"))
         db.add(Message(conversation_id=conversation_id, run_id=run_id, role="assistant", content="", status="accepted"))
@@ -559,7 +581,7 @@ async def create_run(conversation_id: str, body: RunInput, request: Request,
         if conversation.title == "새 대화":
             conversation.title = body.message[:80]
     queue = asyncio.Queue()
-    execution = Execution(run_id, user_id, body, queue, request.state.request_id)
+    execution = Execution(run_id, user_id, body, queue, request.state.request_id, config)
     task = asyncio.create_task(execution.execute())
     tasks[run_id] = task
     def finished(done):

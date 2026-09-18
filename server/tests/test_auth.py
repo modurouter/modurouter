@@ -400,6 +400,24 @@ async def test_upload_mime_size_and_owner_enforced(identities, database, monkeyp
         assert (await client.get('/v1/attachments/'+aid)).json()['status'] == 'expired'
 
 
+@pytest.mark.parametrize("filename", ["fake.hwp", "fake.hwpx"])
+async def test_hangul_upload_rejects_disguised_files(identities, database, monkeypatch, tmp_path, filename):
+    from modurouter import files
+    from modurouter.models import Job
+    from sqlalchemy import select
+
+    monkeypatch.setattr(files.settings, "upload_directory", tmp_path)
+    headers = {"Origin": get_settings().web_origin, "X-CSRF-Token": csrf_token("owner-token")}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                cookies={COOKIE: "owner-token"}, headers=headers) as client:
+        result = await client.post("/v1/attachments", data={"conversation_id": identities},
+                                   files={"file": (filename, b"renamed text file", "application/x-hwp")})
+    assert result.status_code == 422 and result.json()["code"] == "FILE_TYPE_MISMATCH"
+    assert not any(path.is_file() for path in tmp_path.rglob("*"))
+    async with database() as db:
+        assert await db.scalar(select(Job).where(Job.type == "extract")) is None
+
+
 async def test_deleted_guest_late_settlement_releases_shared_reservation(database):
     from decimal import Decimal
 

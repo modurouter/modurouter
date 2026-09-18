@@ -55,6 +55,16 @@ async def current_user(request: Request, db: AsyncSession = Depends(get_db)) -> 
     return user
 
 
+def is_admin(user: User) -> bool:
+    return settings.admin_configured and user.google_sub == "admin:" + settings.admin_username
+
+
+async def current_admin(user: User = Depends(current_user)) -> User:
+    if not is_admin(user):
+        raise AppError("ADMIN_REQUIRED", "관리자 권한이 필요합니다.", 403)
+    return user
+
+
 @router.get("/auth/google/start")
 async def google_start(request: Request):
     if not settings.google_configured:
@@ -126,7 +136,7 @@ async def guest_start(request: Request, db: AsyncSession = Depends(get_db)):
 @router.get("/v1/me")
 async def me(request: Request, user: User = Depends(current_user)):
     return {"id": user.id, "display_name": user.display_name, "email": user.email,
-            "guest": user.google_sub.startswith("guest:"),
+            "guest": user.google_sub.startswith("guest:"), "admin": is_admin(user),
             "csrf_token": request.state.csrf}
 
 

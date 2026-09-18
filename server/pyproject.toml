@@ -11,6 +11,7 @@ dependencies = [
   "python-multipart>=0.0.22,<1", "pypdf>=6,<7", "pillow>=12,<13",
   "python-magic>=0.4.27,<0.5", "charset-normalizer>=3.4,<4",
   "beautifulsoup4>=4.14,<5", "aiohttp>=3.13,<4",
+  "olefile>=0.47,<0.48", "defusedxml>=0.7.1,<0.8", "cryptography>=46,<51",
 ]
 
 [dependency-groups]

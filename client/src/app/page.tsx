@@ -1,18 +1,18 @@
 'use client';
 
+import {ModelPicker, providerName, routingName} from './model-picker';
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {AlertDialog} from '@base-ui/react/alert-dialog';
 import {Dialog} from '@base-ui/react/dialog';
 import {ArrowUp, ArrowUpRight, BookOpen, Check, FileText, Globe, Menu, Mic, Paperclip, Plus, Settings, Square, Trash2, Volume2, X} from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import {api, apiUrl, ApiError, attachmentErrorMessage, fetchApi, readSavedAttachments, restoreAttachments, consumeEvents, ensureSession, responseError, runErrorMessage, type Attachment, type Conversation, type Message, type Run, type Source, type Usage, type User} from '@/lib/api';
+import {api, apiUrl, ApiError, attachmentErrorMessage, fetchApi, readSavedAttachments, restoreAttachments, consumeEvents, ensureSession, responseError, runErrorMessage, type Attachment, type Conversation, type Message, type ModelCatalog, type RoutingPreference, type Run, type Source, type Usage, type User} from '@/lib/api';
 
 type SpeechResultEvent = {results: {length:number; [index:number]:{[index:number]:{transcript:string}}}};
 type Recognition = {lang:string; interimResults:boolean; continuous:boolean; onresult:((e:SpeechResultEvent)=>void)|null; onerror:((e:{error:string})=>void)|null; onend:(()=>void)|null; start:()=>void; stop:()=>void; abort:()=>void};
 type SpeechWindow = Window & {SpeechRecognition?:new()=>Recognition; webkitSpeechRecognition?:new()=>Recognition};
 type Config = {google_login_available:boolean; admin_login_available:boolean; voice_notice:string; max_attachment_bytes:number; max_attachments:number};
-type ModelStatus = {last_success_at:string|null; refresh_error:string|null; stale:boolean};
 const statusText:Record<string,string> = {accepted:'질문을 받았습니다.',preparing:'대화와 자료를 준비하고 있습니다.',model:'답변을 생각하고 있습니다.',tool:'자료를 읽고 있습니다.',streaming:'답변을 작성하고 있습니다.',completed:'답변을 마쳤습니다.',cancelled:'답변 생성을 중단했습니다.',failed:'답변을 완료하지 못했습니다.',interrupted:'서버 재시작으로 답변이 중단되었습니다.'};
 const isActive = (run:Run) => ['accepted','preparing','model','tool','streaming'].includes(run.status);
 const storage = {
@@ -68,6 +68,7 @@ export default function Home() {
   const [messages,setMessages]=useState<Message[]>([]);
   const [draft,setDraft]=useState('');
   const [search,setSearch]=useState(false);
+  const [routing,setRouting]=useState<RoutingPreference>({mode:'auto'});
   const [simple,setSimple]=useState(false);
   const [busy,setBusy]=useState(false);
   const [uploading,setUploading]=useState(false);
@@ -76,7 +77,7 @@ export default function Home() {
   const [error,setError]=useState('');
   const [status,setStatus]=useState('');
   const [usage,setUsage]=useState<Usage|null>(null);
-  const [modelStatus,setModelStatus]=useState<ModelStatus|null>(null);
+  const [modelStatus,setModelStatus]=useState<ModelCatalog|null>(null);
   const [attachments,setAttachments]=useState<Attachment[]>([]);
   const [preview,setPreview]=useState<Attachment|null>(null);
   const [runs,setRuns]=useState<Record<string,Run>>({});
@@ -95,6 +96,7 @@ export default function Home() {
   const speechRequest=useRef(0);
   const retry=useRef<{key:string; body:string; conversationId:string}|null>(null);
   const initialLoad=useRef(false);
+  const routingChosen=useRef(false);
   const navigation=useRef(0);
   const operation=useRef(false);
   const morePending=useRef(false);
@@ -106,8 +108,8 @@ export default function Home() {
   },[]);
 
   const refresh=useCallback(async()=>{
-    const [list,u,m]=await Promise.all([api<{items:Conversation[];next_cursor:string|null}>('/v1/conversations'),api<Usage>('/v1/usage'),api<ModelStatus>('/v1/models/status')]);
-    setConversations(list.items);setCursor(list.next_cursor);setUsage(u);setModelStatus(m);
+    const [list,u,m]=await Promise.all([api<{items:Conversation[];next_cursor:string|null}>('/v1/conversations'),api<Usage>('/v1/usage'),api<ModelCatalog>('/v1/models')]);
+    setConversations(list.items);setCursor(list.next_cursor);setUsage(u);setModelStatus(m);if(!routingChosen.current)setRouting(m.default_routing||{mode:"auto"});
   },[]);
 
   useEffect(()=>{
@@ -220,6 +222,7 @@ export default function Home() {
 
   async function send() {
     if(!user||operation.current||opening||!draft.trim())return;
+    if(routing.mode==='manual'&&(!routing.model_id||!routing.provider)){setError('사용할 모델을 선택해 주세요.');return}
     if(attachments.some(a=>a.status!=='ready')){setError('첨부파일 처리가 끝나지 않았습니다. 실패한 파일은 삭제하고 다시 첨부해 주세요.');return}
     operation.current=true;stopSpeech();setError('');setBusy(true);setStatus('질문을 보내고 있습니다.');
     const question=draft.trim();
@@ -228,7 +231,7 @@ export default function Home() {
     try {
       const conversationId=await ensureConversation();
       abort.signal.throwIfAborted();
-      const body=JSON.stringify({message:question,search_enabled:search,attachment_ids:attachments.map(a=>a.id),explanation_mode:simple?'simple':'standard'});
+      const body=JSON.stringify({message:question,search_enabled:search,attachment_ids:attachments.map(a=>a.id),explanation_mode:simple?'simple':'standard',routing:routingChosen.current?routing:undefined});
       const key=retry.current?.body===body&&retry.current.conversationId===conversationId?retry.current.key:crypto.randomUUID();
       retry.current={key,body,conversationId};
       const response=await fetchApi(`/v1/conversations/${conversationId}/runs`,{method:'POST',credentials:'include',signal:abort.signal,headers:{'Content-Type':'application/json','X-CSRF-Token':user.csrf_token,'Idempotency-Key':key},body});
@@ -243,7 +246,7 @@ export default function Home() {
         await consumeEvents(response,(kind,data)=>{
           if(typeof data.run_id==='string'){runId=data.run_id;activeRun.current=runId;setMessages(ms=>ms.map(m=>m.id===key||m.id==='pending'?{...m,run_id:String(data.run_id)}:m))}
           if(kind==='status'){setStatus(typeof data.message==='string'?data.message:statusText[String(data.status)]||'처리 중입니다.');if(data.status==='context_truncated')setRuns(rs=>({...rs,[String(data.run_id)]:{...rs[String(data.run_id)],run_id:String(data.run_id),context_truncated:true}}))}
-          if(kind==='model'&&typeof data.selected_model==='string')setRuns(rs=>({...rs,[String(data.run_id)]:{...rs[String(data.run_id)],run_id:String(data.run_id),selected_model:data.selected_model as string}}));
+          if(kind==='model'&&typeof data.selected_model==='string')setRuns(rs=>({...rs,[String(data.run_id)]:{...rs[String(data.run_id)],run_id:String(data.run_id),selected_model:data.selected_model as string,selected_provider:data.selected_provider as string,routing:data.routing as RoutingPreference}}));
           if(kind==='delta')setMessages(ms=>ms.map(m=>m.id==='pending'?{...m,run_id:String(data.run_id),content:m.content+String(data.text),status:'streaming'}:m));
           if(kind==='source'){const source=data.source as Source;setRuns(rs=>{const prior=rs[String(data.run_id)];return {...rs,[String(data.run_id)]:{...prior,run_id:String(data.run_id),sources:[...(prior?.sources||[]),source]}}})}
           if(kind==='error')setStatus('답변 상태를 확인하고 있습니다.');
@@ -273,7 +276,7 @@ export default function Home() {
     if(selected.length+attachments.length>(config?.max_attachments||3)){setError(`한 번에 파일 ${config?.max_attachments||3}개까지 첨부할 수 있습니다.`);return}
     const maxBytes=config?.max_attachment_bytes||10*1024*1024;
     if(selected.some(file=>file.size>maxBytes)){setError(`파일은 ${Math.floor(maxBytes/1024/1024)}MB까지 첨부할 수 있습니다.`);return}
-    if(selected.some(file=>!file.size||! /\.(txt|pdf|png|jpe?g)$/i.test(file.name))){setError('내용이 있는 TXT, PDF, PNG, JPG 파일을 첨부해 주세요.');return}
+    if(selected.some(file=>!file.size||! /\.(txt|pdf|hwp|hwpx|png|jpe?g)$/i.test(file.name))){setError('내용이 있는 HWP/HWPX 문서나 TXT/PDF 파일, PNG/JPG 이미지를 첨부해 주세요.');return}
     operation.current=true;setUploading(true);setError('');
     try {
       const id=await ensureConversation();
@@ -319,7 +322,7 @@ export default function Home() {
 
   const loginLinks=(!user||user.guest)&&<div className="login-actions">{config?.google_login_available&&<a className="button" href={apiUrl('/auth/google/start')}>Google로 로그인<ArrowUpRight/></a>}{config?.admin_login_available&&<a className="button" href="/admin">관리자 로그인<ArrowUpRight/></a>}</div>;
 
-  const sidebar=<div className="sidebar"><Brand/><button onClick={newConversation} disabled={busy||uploading||!user}><Plus/>새 대화</button><nav className="history" aria-label="대화 기록"><p className="history-title">내 대화</p>{conversations.length===0&&<p className="muted small" style={{padding:'0 8px'}}>대화가 여기에 저장됩니다.</p>}{conversations.map(c=><div key={c.id} className="history-row" data-active={c.id===current}><button disabled={busy||uploading} onClick={()=>openConversation(c.id)} aria-current={c.id===current?'page':undefined}><span>{c.title}</span></button><DeleteConversation conversation={c} disabled={busy||uploading} onDelete={()=>removeConversation(c)}/></div>)}{cursor&&<button className="quiet" disabled={loadingMore||busy||uploading} onClick={loadMore}>{loadingMore?'불러오는 중':'이전 대화 더 보기'}</button>}</nav><div className="account"><p className="small muted">{user?user.display_name:'한국어 AI 도우미'}</p><p className="small muted">{user?.guest?'로그인 없이 이용 중':'질문부터 자료 이해까지'}</p>{loginLinks}</div></div>;
+  const sidebar=<div className="sidebar"><Brand/><button onClick={newConversation} disabled={busy||uploading||!user}><Plus/>새 대화</button><nav className="history" aria-label="대화 기록"><p className="history-title">내 대화</p>{conversations.length===0&&<p className="muted small" style={{padding:'0 8px'}}>대화가 여기에 저장됩니다.</p>}{conversations.map(c=><div key={c.id} className="history-row" data-active={c.id===current}><button disabled={busy||uploading} onClick={()=>openConversation(c.id)} aria-current={c.id===current?'page':undefined}><span>{c.title}</span></button><DeleteConversation conversation={c} disabled={busy||uploading} onDelete={()=>removeConversation(c)}/></div>)}{cursor&&<button className="quiet" disabled={loadingMore||busy||uploading} onClick={loadMore}>{loadingMore?'불러오는 중':'이전 대화 더 보기'}</button>}</nav><div className="account"><p className="small muted">{user?user.display_name:'한국어 AI 도우미'}</p><p className="small muted">{user?.guest?'로그인 없이 이용 중':'질문부터 자료 이해까지'}</p>{user?.admin&&<a className="button" href="/admin">라우팅 관리</a>}{loginLinks}</div></div>;
 
   return <div className="app-shell">
     {sidebar}
@@ -332,16 +335,16 @@ export default function Home() {
         </div>
       </header>
       <div className="conversation-scroll" ref={scroller}>
-        {loading||opening?<p className="loading" role="status">{opening?'대화를 불러오고 있습니다.':'서비스에 연결하고 있습니다.'}</p>:messages.length===0?<section className="empty"><Brand/><h1>{user?'무엇이 궁금한가요?':'궁금한 것부터 물어보세요.'}</h1><p className="muted">어려운 개념을 풀어보고, 찾은 자료를 정리해 보세요. 모두라우터가 한국어로 함께합니다.</p>{user?.guest&&<p className="small muted">로그인 없이 바로 질문할 수 있습니다. 대화 기록은 현재 브라우저 세션에서만 이어갈 수 있으며, 로그인한 계정으로 옮겨지지 않습니다.</p>}{!user?<button onClick={()=>location.reload()}>다시 연결하기</button>:<div className="examples"><button onClick={()=>{setDraft('광합성을 쉬운 예시로 설명해 줘');setSimple(true);input.current?.focus()}}><BookOpen/>광합성을 쉬운 예시로 설명해 줘<ArrowUpRight/></button><button onClick={()=>{setDraft('한국의 최신 우주 탐사 소식을 찾아 줘');setSearch(true);input.current?.focus()}}><Globe/>출처를 확인하며 최신 소식 알아보기<ArrowUpRight/></button><button disabled={busy||uploading||opening} onClick={()=>uploadInput.current?.click()}><FileText/>파일을 읽고 핵심 내용 정리하기<ArrowUpRight/></button></div>}</section>:<div className="reading" aria-label="대화 내용">{messages.map(m=>{const run=runs[m.run_id];const allowed=new Set(run?.sources?.map(s=>s.url).filter(Boolean));return <article key={m.id} className="message"><div className="message-author">{m.role==='user'?'나':'모두라우터'}{m.role==='assistant'&&m.status==='completed'&&<Check aria-label="완료"/>}{m.role==='assistant'&&<span className="message-model" aria-live="polite">{run?.selected_model?`모델: ${run.selected_model}`:['accepted','preparing','model','tool','streaming'].includes(m.status)?'모델 자동 선택 중':'모델 정보 없음'}</span>}</div>{m.role==='user'?<p className="message-content">{m.content}</p>:<div className="markdown"><Markdown remarkPlugins={[remarkGfm]} components={{a:({href,children})=>href&&allowed.has(href)?<a href={href} target="_blank" rel="noopener noreferrer">{children}</a>:<span>{children}</span>,img:()=>null}}>{m.content||(['failed','cancelled','interrupted'].includes(m.status)?'':'답변을 준비하고 있습니다.')}</Markdown></div>}{m.role==='assistant'&&<>{run?.context_truncated&&<p className="small context-notice" role="note">입력 한도로 이전 대화나 자료 일부가 제외되었습니다. 문서 전체를 반영한 답변이 아닐 수 있습니다.</p>}{['failed','cancelled','interrupted'].includes(m.status)&&<p className="small error">{m.status==='failed'?runErrorMessage(run?.error_code):statusText[m.status]}</p>}<div className="message-actions">{m.content&&<button className="quiet" onClick={()=>speak(m)}><Volume2/>{speaking===m.id?'읽기 중단':'읽어주기'}</button>}{run&&<details><summary>답변 상세</summary><p className="small">모델: {run.selected_model||'미확인'}<br/>공급자: {run.providers?.join(', ')||'OpenRouter'}<br/>{run.cost_source==='calculated'?'토큰 기준 계산 비용':run.cost_source==='mixed'?'청구 및 계산 비용':'확정 비용'}: ${Number(run.cost_usd||0).toFixed(6)}<br/>확인 중인 예약액: ${Number(run.pending_usd||0).toFixed(6)}<br/>입력 토큰: {run.input_tokens??0}<br/>출력 토큰: {run.output_tokens??0}{!run.tokens_complete&&' (일부 사용량 확인 중)'}<br/>모델 호출: {run.attempts||0}회</p></details>}{['failed','interrupted'].includes(m.status)&&<button className="quiet" disabled={busy||opening} onClick={()=>{const question=messages.find(item=>item.run_id===m.run_id&&item.role==='user');if(question){setDraft(question.content);input.current?.focus()}}}>질문 다시 입력</button>}</div>{run?.sources?.length>0&&<div className="sources" aria-label="확인한 출처"><strong>참고한 자료</strong>{run.sources.map((s,i)=><span key={`${s.source_id}-${i}`}>{s.url?<a href={s.url} target="_blank" rel="noopener noreferrer">[{s.source_id}] {s.title}<ArrowUpRight/></a>:<span>[{s.source_id}] {s.title}</span>}<span className="muted"> {s.scope==='search_snippet'?'검색 발췌':s.scope==='attachment'?'첨부파일':'페이지 본문'}{s.truncated?' (일부)':''}</span></span>)}</div>}</>}</article>})}</div>}
+        {loading||opening?<p className="loading" role="status">{opening?'대화를 불러오고 있습니다.':'서비스에 연결하고 있습니다.'}</p>:messages.length===0?<section className="empty"><Brand/><h1>{user?'무엇이 궁금한가요?':'궁금한 것부터 물어보세요.'}</h1><p className="muted">어려운 개념을 풀어보고, 찾은 자료를 정리해 보세요. 모두라우터가 한국어로 함께합니다.</p>{user?.guest&&<p className="small muted">로그인 없이 바로 질문할 수 있습니다. 대화 기록은 현재 브라우저 세션에서만 이어갈 수 있으며, 로그인한 계정으로 옮겨지지 않습니다.</p>}{!user?<button onClick={()=>location.reload()}>다시 연결하기</button>:<div className="examples"><button onClick={()=>{setDraft('광합성을 쉬운 예시로 설명해 줘');setSimple(true);input.current?.focus()}}><BookOpen/>광합성을 쉬운 예시로 설명해 줘<ArrowUpRight/></button><button onClick={()=>{setDraft('한국의 최신 우주 탐사 소식을 찾아 줘');setSearch(true);input.current?.focus()}}><Globe/>출처를 확인하며 최신 소식 알아보기<ArrowUpRight/></button><button disabled={busy||uploading||opening} onClick={()=>uploadInput.current?.click()}><FileText/>파일을 읽고 핵심 내용 정리하기<ArrowUpRight/></button></div>}</section>:<div className="reading" aria-label="대화 내용">{messages.map(m=>{const run=runs[m.run_id];const allowed=new Set(run?.sources?.map(s=>s.url).filter(Boolean));return <article key={m.id} className="message"><div className="message-author">{m.role==='user'?'나':'모두라우터'}{m.role==='assistant'&&m.status==='completed'&&<Check aria-label="완료"/>}{m.role==='assistant'&&<span className="message-model" aria-live="polite">{run?.selected_model?`${providerName(run.selected_provider)} / ${run.selected_model}`:['accepted','preparing','model','tool','streaming'].includes(m.status)?'모델 준비 중':'모델 정보 없음'}</span>}</div>{m.role==='user'?<p className="message-content">{m.content}</p>:<div className="markdown"><Markdown remarkPlugins={[remarkGfm]} components={{a:({href,children})=>href&&allowed.has(href)?<a href={href} target="_blank" rel="noopener noreferrer">{children}</a>:<span>{children}</span>,img:()=>null}}>{m.content||(['failed','cancelled','interrupted'].includes(m.status)?'':'답변을 준비하고 있습니다.')}</Markdown></div>}{m.role==='assistant'&&<>{run?.context_truncated&&<p className="small context-notice" role="note">입력 한도로 이전 대화나 자료 일부가 제외되었습니다. 문서 전체를 반영한 답변이 아닐 수 있습니다.</p>}{['failed','cancelled','interrupted'].includes(m.status)&&<p className="small error">{m.status==='failed'?runErrorMessage(run?.error_code):statusText[m.status]}</p>}<div className="message-actions">{m.content&&<button className="quiet" onClick={()=>speak(m)}><Volume2/>{speaking===m.id?'읽기 중단':'읽어주기'}</button>}{run&&<details><summary>답변 상세</summary><p className="small">모델: {run.selected_model||'미확인'}<br/>선택 방식: {routingName(run.routing?.mode)}<br/>답변 제공처: {providerName(run.selected_provider)}<br/>호출한 제공처: {run.providers?.map(providerName).join(', ')||'확인 중'}<br/>{run.cost_source==='calculated'?'토큰 기준 계산 비용':run.cost_source==='mixed'?'청구 및 계산 비용':'확정 비용'}: ${Number(run.cost_usd||0).toFixed(6)}<br/>확인 중인 예약액: ${Number(run.pending_usd||0).toFixed(6)}<br/>입력 토큰: {run.input_tokens??0}<br/>출력 토큰: {run.output_tokens??0}{!run.tokens_complete&&' (일부 사용량 확인 중)'}<br/>모델 호출: {run.attempts||0}회</p></details>}{['failed','interrupted'].includes(m.status)&&<button className="quiet" disabled={busy||opening} onClick={()=>{const question=messages.find(item=>item.run_id===m.run_id&&item.role==='user');if(question){setDraft(question.content);input.current?.focus()}}}>질문 다시 입력</button>}</div>{run?.sources?.length>0&&<div className="sources" aria-label="확인한 출처"><strong>참고한 자료</strong>{run.sources.map((s,i)=><span key={`${s.source_id}-${i}`}>{s.url?<a href={s.url} target="_blank" rel="noopener noreferrer">[{s.source_id}] {s.title}<ArrowUpRight/></a>:<span>[{s.source_id}] {s.title}</span>}<span className="muted"> {s.scope==='search_snippet'?'검색 발췌':s.scope==='attachment'?'첨부파일':'페이지 본문'}{s.truncated?' (일부)':''}</span></span>)}</div>}</>}</article>})}</div>}
       </div>
       <div className="composer-zone"><div className="reading">
         {error&&<p id="composer-error" className="error" role="alert">{error}</p>}
         <p className="status-line" role="status" aria-live="polite">{listening?'듣고 있습니다. 인식한 문장은 전송 전에 수정할 수 있습니다.':uploading?'파일을 올리고 있습니다.':status}</p>
-        <p className="model-routing-note">모델 자동 선택 <span>질문에 맞춰 선택하며, 사용한 모델은 각 답변에 표시됩니다.</span></p>
+        <ModelPicker catalog={modelStatus} value={routing} onChange={value=>{routingChosen.current=true;setRouting(value)}} disabled={!user||busy||opening||uploading} needsTools={search||attachments.length>0}/>
         <form className="composer" onSubmit={e=>{e.preventDefault();send()}}>
           {attachments.length>0&&<div className="attachments">{attachments.map(a=><div className="attachment-item" key={a.id}><div className="attachment"><FileText/><span className="name">{a.filename}</span><span>{a.status==='ready'?'읽기 완료':a.status==='failed'?'읽기 실패':a.status==='expired'?'만료됨':a.status==='unavailable'?'확인 필요':'읽는 중'}</span>{a.status==='ready'&&<button type="button" className="quiet" onClick={()=>setPreview(a)}>내용 확인</button>}<button type="button" className="quiet" disabled={busy||uploading||opening} aria-label={`${a.filename} 첨부 삭제`} onClick={()=>removeAttachment(a)}><X/></button></div>{attachmentErrorMessage(a)&&<p className="small error" role="alert">{attachmentErrorMessage(a)}</p>}{a.status==='ready'&&/\.(png|jpe?g)$/i.test(a.filename)&&<p className="small muted">이미지에서 읽은 내용은 누락되거나 틀릴 수 있습니다. 내용 확인에서 원본과 비교해 주세요.</p>}</div>)}</div>}
           <label htmlFor="question" className="sr-only">질문 입력</label><textarea aria-describedby={error?'composer-error':undefined} id="question" ref={input} value={draft} onChange={e=>setDraft(e.target.value)} placeholder={loading?'서비스에 연결하고 있습니다.':'질문을 입력하거나 자료를 첨부하세요.'} disabled={!user||busy||opening} maxLength={12000} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&window.matchMedia('(hover: hover) and (pointer: fine)').matches){e.preventDefault();send()}}}/>
-          <div className="composer-controls"><div className="tools"><input ref={uploadInput} type="file" hidden tabIndex={-1} accept=".txt,.pdf,.png,.jpg,.jpeg" multiple aria-hidden="true" onChange={e=>uploadFiles(e.target.files)}/><button type="button" aria-label="파일 첨부" disabled={!user||busy||uploading||opening} onClick={()=>uploadInput.current?.click()}><Paperclip/><span className="tool-text">첨부</span></button><button type="button" aria-pressed={search} disabled={!user||busy||opening} onClick={()=>setSearch(s=>!s)}><Globe/>웹 검색</button><button type="button" aria-pressed={simple} disabled={!user||busy||opening} onClick={()=>setSimple(s=>!s)}><BookOpen/><span className="tool-text" aria-hidden="true">쉬운 설명</span><span className="sr-only">쉬운 설명</span></button><button type="button" aria-label={listening?'음성 입력 중단':'음성 입력'} aria-pressed={listening} disabled={!user||busy||opening} onClick={voice}><Mic/></button></div>{busy?<button type="button" onClick={cancel} aria-label="답변 생성 중단"><Square/>중단</button>:<button className="primary" type="submit" disabled={!user||busy||opening||!draft.trim()||uploading||attachments.some(a=>a.status!=='ready')} aria-label="질문 전송"><ArrowUp/></button>}</div>
+          <div className="composer-controls"><div className="tools"><input ref={uploadInput} type="file" hidden tabIndex={-1} accept=".txt,.pdf,.hwp,.hwpx,.png,.jpg,.jpeg" multiple aria-hidden="true" onChange={e=>uploadFiles(e.target.files)}/><button type="button" aria-label="파일 첨부" disabled={!user||busy||uploading||opening} onClick={()=>uploadInput.current?.click()}><Paperclip/><span className="tool-text">첨부</span></button><button type="button" aria-pressed={search} disabled={!user||busy||opening} onClick={()=>setSearch(s=>!s)}><Globe/>웹 검색</button><button type="button" aria-pressed={simple} disabled={!user||busy||opening} onClick={()=>setSimple(s=>!s)}><BookOpen/><span className="tool-text" aria-hidden="true">쉬운 설명</span><span className="sr-only">쉬운 설명</span></button><button type="button" aria-label={listening?'음성 입력 중단':'음성 입력'} aria-pressed={listening} disabled={!user||busy||opening} onClick={voice}><Mic/></button></div>{busy?<button type="button" onClick={cancel} aria-label="답변 생성 중단"><Square/>중단</button>:<button className="primary" type="submit" disabled={!user||busy||opening||!draft.trim()||uploading||attachments.some(a=>a.status!=='ready')} aria-label="질문 전송"><ArrowUp/></button>}</div>
         </form><p className="composer-note">AI의 답변은 틀릴 수 있습니다. 중요한 내용은 출처를 확인해 주세요.</p>
       </div></div>
     </main>

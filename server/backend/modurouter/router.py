@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
+from typing import Literal
 
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +13,22 @@ from .errors import AppError
 from .models import GenerationAttempt, PriceSnapshot, ProviderModel, SyncState
 
 MILLION = Decimal(1_000_000)
+
+
+class RoutingPreference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["auto", "free", "manual"] = "auto"
+    provider: Literal["openrouter", "zenmux", "openai", "upstage"] | None = None
+    model_id: str | None = Field(default=None, min_length=1, max_length=255)
+
+    @model_validator(mode="after")
+    def explicit_selection(self):
+        if self.mode == "manual":
+            if not self.provider or not self.model_id:
+                raise ValueError("Direct selection requires provider and model_id")
+        elif self.provider is not None or self.model_id is not None:
+            raise ValueError("Provider and model_id require manual mode")
+        return self
 
 
 def price(value) -> Decimal:
@@ -154,7 +172,11 @@ class Candidate:
 
 
 async def candidates(db: AsyncSession, settings: Settings, input_tokens: int,
-                     needs_tools: bool = False) -> list[Candidate]:
+                     needs_tools: bool = False, routing: RoutingPreference | None = None,
+                     *, catalog: bool = False) -> list[Candidate]:
+    routing = routing or RoutingPreference()
+    if routing.mode == "manual" and not settings.allow_manual_selection:
+        raise AppError("MANUAL_SELECTION_DISABLED", "관리자가 직접 모델 선택을 비활성화했습니다.", 403)
     states = (await db.scalars(select(SyncState).where(
         SyncState.provider_code.in_(settings.configured_providers)))).all()
     fresh = [state for state in states if state.last_success_at and state.active_batch_id
@@ -166,21 +188,34 @@ async def candidates(db: AsyncSession, settings: Settings, input_tokens: int,
             ProviderModel.enabled.is_(True), PriceSnapshot.batch_id.in_([s.active_batch_id for s in fresh]),
             ProviderModel.provider_code.in_([s.provider_code for s in fresh]),
             ProviderModel.context_length >= input_tokens + settings.max_output_tokens,
-            PriceSnapshot.input_per_m <= settings.input_price_cap_usd_per_m,
-            PriceSnapshot.output_per_m <= settings.output_price_cap_usd_per_m,
             PriceSnapshot.request_price == 0))).all()
     # Free endpoints stay free. Paid routes reserve the provider ceiling, since an endpoint's
     # price can be higher than the catalog's representative price.
     result = []
     for model, snapshot in rows:
-        if not settings.model_allowed(model.provider_code, model.model_id, tools=needs_tools):
+        if (catalog or routing.mode != "auto") and not settings.selectable_model(model.provider_code, model.model_id):
             continue
+        # Automatic routing keeps the reviewed quality pool. Explicit selection
+        # opens the priced text catalog, while tool planning still requires review.
+        if not catalog:
+            if needs_tools and not settings.model_allowed(model.provider_code, model.model_id, tools=True):
+                continue
+            if routing.mode == "auto" and (
+                not settings.model_allowed(model.provider_code, model.model_id, tools=needs_tools)
+                or snapshot.input_per_m > settings.input_price_cap_usd_per_m
+                or snapshot.output_per_m > settings.output_price_cap_usd_per_m
+            ):
+                continue
+            if routing.mode == "free" and (snapshot.input_per_m != 0 or snapshot.output_per_m != 0):
+                continue
+            if routing.mode == "manual" and (model.provider_code != routing.provider or model.model_id != routing.model_id):
+                continue
         expiry = snapshot.raw.get("price_valid_until")
         if expiry and date.today() >= date.fromisoformat(expiry):
             continue
         estimate = (input_tokens * snapshot.input_per_m + settings.max_output_tokens * snapshot.output_per_m) / MILLION
         ceiling = (input_tokens * settings.input_price_cap_usd_per_m + settings.max_output_tokens * settings.output_price_cap_usd_per_m) / MILLION
-        reservation = ceiling if model.provider_code in ("openrouter", "zenmux") else estimate
+        reservation = ceiling if routing.mode == "auto" and not catalog and model.provider_code in ("openrouter", "zenmux") else estimate
         if snapshot.input_per_m == snapshot.output_per_m == 0:
             reservation = Decimal(0)
         result.append(Candidate(model.model_id, snapshot.input_per_m, snapshot.output_per_m,
@@ -194,6 +229,33 @@ async def candidates(db: AsyncSession, settings: Settings, input_tokens: int,
         latency = sum((a.finished_at - a.created_at).total_seconds() for a in success if a.finished_at) / max(len(success), 1)
         return (-ratio, latency)
     result.sort(key=lambda x: (x.estimated_usd, *reliability(x), x.model_id, x.provider_code))
-    if not result:
+    if not result and not catalog:
+        if routing.mode == "manual":
+            raise AppError("SELECTED_MODEL_UNAVAILABLE", "선택한 모델을 현재 사용할 수 없습니다. 가격 갱신 상태와 입력 길이, 자료 처리 지원 여부를 확인해 주세요.", 409)
+        if routing.mode == "free":
+            raise AppError("NO_FREE_MODEL", "현재 요청을 처리할 무료 모델이 없습니다. 자동으로 유료 모델을 사용하지 않습니다.", 503, True)
         raise AppError("NO_ELIGIBLE_MODEL", "현재 가격과 품질 조건에 맞는 모델이 없습니다.", 503, True)
     return result
+
+
+async def model_catalog(db: AsyncSession, settings: Settings) -> dict:
+    status = await model_status(db, settings)
+    try:
+        choices = await candidates(db, settings, 0, catalog=True)
+    except AppError as exc:
+        if exc.code != "PRICE_DATA_STALE":
+            raise
+        choices = []
+    return {**status, "default_routing": settings.default_routing,
+            "allow_manual_selection": settings.allow_manual_selection, "models": [
+        {"provider": c.provider_code, "model_id": c.model_id,
+         "name": c.price_data.get("name") or c.model_id,
+         "input_per_m": str(c.input_per_m), "output_per_m": str(c.output_per_m),
+         "is_free": c.input_per_m == c.output_per_m == 0,
+         "context_length": c.price_data["context_length"],
+         "supports_tools": settings.model_allowed(c.provider_code, c.model_id, tools=True),
+         "auto_eligible": settings.model_allowed(c.provider_code, c.model_id)
+             and c.input_per_m <= settings.input_price_cap_usd_per_m
+             and c.output_per_m <= settings.output_price_cap_usd_per_m,
+         "price_kind": c.price_data.get("price_kind", "api")}
+        for c in choices]}

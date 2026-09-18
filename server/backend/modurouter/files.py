@@ -13,11 +13,19 @@ from .config import get_settings
 from .conversations import owned_conversation
 from .db import get_db, new_id, utcnow
 from .errors import AppError
+from .hangul import HWP_MIME, HWPX_MIME, validate_container
 from .models import Attachment, Job, User
 
 router = APIRouter(prefix="/v1/attachments")
 settings = get_settings()
-ALLOWED = {".txt": "text/plain", ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+ALLOWED = {".txt": "text/plain", ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+           ".hwp": HWP_MIME, ".hwpx": HWPX_MIME}
+HANGUL_UPLOAD_ERRORS = {
+    "HWP_INVALID": "한글 문서가 손상되었습니다. 한글에서 다시 저장한 파일을 첨부해 주세요.",
+    "HWP_ENCRYPTED": "암호를 해제한 한글 문서를 다시 첨부해 주세요.",
+    "HWP_VERSION_UNSUPPORTED": "이 버전의 한글 문서는 HWPX로 다시 저장한 뒤 첨부해 주세요.",
+    "HWP_SIZE_LIMIT": "한글 문서의 내부 데이터가 너무 큽니다. 파일을 나누어 첨부해 주세요.",
+}
 
 
 def storage_path(key: str) -> Path:
@@ -58,7 +66,7 @@ async def upload(file: UploadFile = File(...), conversation_id: str = Form(...),
     filename = Path(file.filename or "").name[:255]
     extension = Path(filename).suffix.lower()
     if extension not in ALLOWED:
-        raise AppError("FILE_UNSUPPORTED", "TXT, PDF, PNG, JPG 파일을 첨부해 주세요.")
+        raise AppError("FILE_UNSUPPORTED", "HWP/HWPX 문서나 TXT/PDF 파일, PNG/JPG 이미지를 첨부해 주세요.")
     identifier = new_id()
     key = f"{user.id}/{identifier}"
     path = storage_path(key)
@@ -81,7 +89,16 @@ async def upload(file: UploadFile = File(...), conversation_id: str = Form(...),
         finally:
             await asyncio.to_thread(handle.close)
             await file.close()
-        mime = await asyncio.to_thread(magic.from_file, str(path), mime=True)
+        if extension in (".hwp", ".hwpx"):
+            mime = ALLOWED[extension]
+            try:
+                await asyncio.to_thread(validate_container, path, mime)
+            except ValueError as exc:
+                code = str(exc)
+                raise AppError(code, HANGUL_UPLOAD_ERRORS.get(code,
+                    "파일의 실제 형식과 확장자가 일치하지 않습니다.")) from exc
+        else:
+            mime = await asyncio.to_thread(magic.from_file, str(path), mime=True)
         # libmagic classifies valid text by syntax (JSON, HTML, XML, etc.).
         # Keep it inert plain text; the extractor still rejects binary/encoding errors.
         if extension == ".txt" and (mime.startswith("text/") or mime in {

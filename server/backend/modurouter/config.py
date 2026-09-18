@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     zenmux_api_key: SecretStr = SecretStr("")
     openai_api_key: SecretStr = SecretStr("")
     upstage_api_key: SecretStr = SecretStr("")
+    enabled_providers: list[str] | None = None
+    manual_model_allowlist: str | None = None
+    allow_manual_selection: bool = True
+    default_routing: dict = Field(default_factory=lambda: {"mode": "auto"})
     model_allowlist: str = ""
     tool_model_allowlist: str = ""
     input_price_cap_usd_per_m: Decimal = Field(default=Decimal("0"), ge=0)
@@ -85,10 +89,17 @@ class Settings(BaseSettings):
     @property
     def configured_providers(self) -> tuple[str, ...]:
         return tuple(code for code in ("openrouter", "zenmux", "openai", "upstage")
-                     if getattr(self, f"{code}_api_key").get_secret_value())
+                     if getattr(self, f"{code}_api_key").get_secret_value()
+                     and (self.enabled_providers is None or code in self.enabled_providers))
 
     def model_allowed(self, provider: str, model: str, *, tools: bool = False) -> bool:
         allowed = self.allowed_tool_models if tools else self.allowed_models
+        return model in allowed or f"{provider}::{model}" in allowed
+
+    def selectable_model(self, provider: str, model: str) -> bool:
+        if self.manual_model_allowlist is None:
+            return True
+        allowed = {s.strip() for s in self.manual_model_allowlist.split(",") if s.strip()}
         return model in allowed or f"{provider}::{model}" in allowed
 
 

@@ -15,6 +15,7 @@ from .files import storage_path
 from .models import Attachment, GenerationAttempt, Job, SyncState
 from .providers import create_adapters, usage_cost
 from .router import sync_models
+from .runtime_config import effective_settings
 
 settings = get_settings()
 logger = logging.getLogger("modurouter.worker")
@@ -116,14 +117,16 @@ async def reconcile(adapters):
 
 
 async def sync_due(adapters):
+    async with Session() as db:
+        config = await effective_settings(db, settings)
     for provider, adapter in adapters.items():
         async with Session() as db:
             state = await db.get(SyncState, provider)
-            due = not state or not state.last_attempt_at or (utcnow() - state.last_attempt_at).total_seconds() >= settings.price_refresh_seconds
+            due = not state or not state.last_attempt_at or (utcnow() - state.last_attempt_at).total_seconds() >= config.price_refresh_seconds
         if due:
             try:
                 async with Session() as db:
-                    count = await sync_models(db, adapter, settings)
+                    count = await sync_models(db, adapter, config)
                     logger.info("model_sync_completed provider=%s count=%s", provider, count)
             except Exception:
                 logger.warning("model_sync_failed provider=%s", provider)

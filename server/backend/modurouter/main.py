@@ -12,14 +12,15 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, conversations, files, harness
+from . import admin, auth, conversations, files, harness
 from .billing import ACTIVE, usage_summary
 from .config import get_settings
 from .db import Session, engine, get_db, utcnow
 from .errors import AppError
 from .models import Attachment, Conversation, Job, LoginSession, Message, Run, User
-from .router import candidates
+from .router import RoutingPreference, candidates, model_catalog
 from .router import model_status as provider_model_status
+from .runtime_config import effective_settings
 
 settings = get_settings()
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -88,7 +89,8 @@ async def live():
 async def ready(db: AsyncSession = Depends(get_db)):
     try:
         await db.execute(text("SELECT 1"))
-        await candidates(db, settings, 1)
+        config = await effective_settings(db, settings)
+        await candidates(db, config, 1, routing=RoutingPreference(**config.default_routing))
     except AppError as exc:
         return JSONResponse({"status": "not_ready", "code": exc.code}, status_code=503)
     except Exception as exc:
@@ -105,12 +107,17 @@ async def public_config():
 
 @app.get("/v1/usage")
 async def usage(user: User = Depends(auth.current_user), db: AsyncSession = Depends(get_db)):
-    return await usage_summary(db, user.id, settings)
+    return await usage_summary(db, user.id, await effective_settings(db, settings))
+
+
+@app.get("/v1/models")
+async def available_models(user: User = Depends(auth.current_user), db: AsyncSession = Depends(get_db)):
+    return await model_catalog(db, await effective_settings(db, settings))
 
 
 @app.get("/v1/models/status")
 async def model_status(user: User = Depends(auth.current_user), db: AsyncSession = Depends(get_db)):
-    return await provider_model_status(db, settings)
+    return await provider_model_status(db, await effective_settings(db, settings))
 
 
 @app.delete("/v1/me")
@@ -138,6 +145,7 @@ async def delete_account(user: User = Depends(auth.current_user), db: AsyncSessi
     return response
 
 
+app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(conversations.router)
 app.include_router(files.router)
