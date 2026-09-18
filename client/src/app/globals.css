@@ -294,8 +294,8 @@ button,input,select,textarea {font:inherit}
 @media(max-width:360px){.chat-header .wordmark{font-size:20px}.workspace-nav{gap:2px}.workspace-login{gap:4px;padding:7px}}
 
 /* Quiet event and learning identities; motion is handled by Motion. */
-.learning-header { flex-shrink: 0; padding-bottom: 24px; }
-.site-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 32px; padding: 20px 48px 20px; }
+.learning-header { flex-shrink: 0; padding-top: var(--site-header-height, 140px); padding-bottom: 24px; }
+.site-header { position: fixed; z-index: 25; inset: 0 0 auto; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 32px; padding: 20px 48px 20px; background: #fcfdfff2; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .learning-trigger { position: relative; isolation: isolate; display: inline-flex; align-items: center; gap: 10px; padding: 14px 19px; border-radius: 24px; color: #4a4538; font-size: 14px; font-weight: 550; white-space: nowrap; }
 .learning-trigger > svg, .learning-trigger > span { position: relative; z-index: 1; }
 .learning-trigger > svg:first-of-type { color: #a87905; }

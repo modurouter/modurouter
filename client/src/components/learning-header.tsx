@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { animate, motion, useMotionValue, useReducedMotion } from 'motion/react';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { ArrowUpRight, ArrowLeft, BookOpen, ChevronDown, ChevronRight, MessageCircle, Smartphone, Sprout, ShieldCheck, FileText, Coffee } from 'lucide-react';
@@ -66,10 +66,26 @@ export function LearningHeader({ onChoose, disabled = false, view, onViewChange,
   const topic = topics.find(item => item.id === topicId);
   const step = practiceSteps[mode][progress.step];
   const heading = useRef<HTMLHeadingElement>(null);
+  const header = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const element = header.current;
+    if (!element) return;
+    const measure = () => element.parentElement?.style.setProperty('--site-header-height', `${element.getBoundingClientRect().height}px`);
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    // The fixed learning trigger remains usable from anywhere in a long chat.
+    const frame = requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
   useEffect(() => { if (open) heading.current?.focus({ preventScroll: true }); }, [topicId, open, view.practice, progress.step, mode]);
   const choose = (prompt: string, label: string) => { if (!disabled) { onChoose(learningPrompt(prompt), label); setOpen(false); } };
   return <Collapsible.Root open={open} onOpenChange={setOpen} className="learning-header">
-    <header className="site-header">
+    <header ref={header} className="site-header">
       <span className="wordmark">modurouter</span>
       {navigation}
       <BrandRibbon />
