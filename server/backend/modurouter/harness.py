@@ -5,11 +5,9 @@ import logging
 import re
 import time
 from decimal import Decimal
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,9 +18,11 @@ from .conversations import owned_conversation
 from .db import Session, get_db, new_id, utcnow
 from .errors import AppError
 from .files import owned_attachment
+from .model_options import effective_effort, select_routes
 from .models import GenerationAttempt, Message, Run, ToolRun, UsageLedger, User
 from .providers import ProviderError, create_adapters, usage_cost
 from .router import candidates, estimate_tokens
+from .run_input import RunInput
 from .tools import FinalPlan, parse_plan, read_url, search_web
 
 router = APIRouter(prefix="/v1")
@@ -60,14 +60,6 @@ class CitationFilter:
         else:
             ready, self.pending = self.pending, ""
         return re.sub(r"\[(S\d+)\]", lambda match: match[0] if match[1] in self.allowed else "", ready)
-
-
-class RunInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    message: str = Field(min_length=1, max_length=12000)
-    attachment_ids: list[str] = Field(default_factory=list, max_length=3)
-    search_enabled: bool = False
-    explanation_mode: Literal["standard", "simple"] = "standard"
 
 
 async def owned_run(db, user_id, run_id, lock=False):
@@ -239,6 +231,7 @@ class Execution:
         async with Session() as db:
             choices = await candidates(db, settings, estimate_tokens(messages),
                                        bool(self.body.search_enabled or self.body.attachment_ids or internal))
+        choices = select_routes(choices, self.body.model, self.body.reasoning_effort)
         call_limit = settings.max_model_calls_per_run - int(internal)
         routes = choices[:1]
         if len(choices) > 1:
@@ -265,7 +258,9 @@ class Execution:
                 await self.status("model")
                 submitted = True
                 adapter = self.adapters[candidate.provider_code]
-                async for event in adapter.stream_chat(candidate.model_id, messages, settings.max_output_tokens):
+                effort = effective_effort(candidate, self.body.reasoning_effort)
+                options = {"reasoning_effort": effort} if effort else {}
+                async for event in adapter.stream_chat(candidate.model_id, messages, settings.max_output_tokens, **options):
                     if event.get("id") and not generation_id:
                         generation_id = event["id"]
                         async with Session.begin() as db:
@@ -505,7 +500,8 @@ async def create_run(conversation_id: str, body: RunInput, request: Request,
             if file.extraction_status != "ready" or file.expires_at <= utcnow():
                 raise AppError("ATTACHMENT_NOT_READY", "첨부파일 처리가 끝난 뒤 전송해 주세요.")
         initial, _ = build_context([], body.message, [], body.explanation_mode == "simple", settings.max_input_tokens)
-        await candidates(db, settings, estimate_tokens(initial), bool(body.search_enabled or body.attachment_ids))
+        choices = await candidates(db, settings, estimate_tokens(initial), bool(body.search_enabled or body.attachment_ids))
+        select_routes(choices, body.model, body.reasoning_effort)
         day = await admit_run(db, user_id, settings)
         run_id = new_id()
         db.add(Run(id=run_id, user_id=user_id, conversation_id=conversation_id, idempotency_key=idempotency_key,

@@ -58,7 +58,7 @@ for (const signedIn of [false, true]) {
     const user = await target.ensureSession();
     assert.equal(user.guest, !signedIn);
     assert.deepEqual(calls.map(([url, method]) => [new URL(url, 'http://test').pathname, method]),
-      signedIn ? [['/v1/me', 'GET']] : [['/v1/me', 'GET'], ['/auth/guest', 'POST'], ['/v1/me', 'GET']]);
+      signedIn ? [['/api/backend/v1/me', 'GET']] : [['/api/backend/v1/me', 'GET'], ['/api/backend/auth/guest', 'POST'], ['/api/backend/v1/me', 'GET']]);
   });
 }
 

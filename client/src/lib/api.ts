@@ -7,8 +7,7 @@ export async function responseError(response: Response): Promise<ApiError> {
     typeof error?.message === 'string' ? error.message : '서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.', response.status);
 }
 export function apiUrl(path: string): string {
-  const origin = process.env.NEXT_PUBLIC_API_ORIGIN?.replace(/\/$/, '') || '';
-  return `${origin}${path}`;
+  return `/api/backend${path}`;
 }
 export async function api<T>(url: string, init: RequestInit = {}, csrf?: string): Promise<T> {
   const headers = new Headers(init.headers);

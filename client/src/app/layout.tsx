@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
+import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
 import './globals.css';
-
-export const metadata: Metadata = {title: '모두라우터', description: '질문하고, 자료를 읽고, 함께 이해하는 한국어 AI'};
-
-export default function RootLayout({children}: Readonly<{children: React.ReactNode}>) {
+export const metadata: Metadata = { title: 'modurouter', description: '누구에게나 편안한 대화.' };
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="ko"><body>{children}</body></html>;
 }

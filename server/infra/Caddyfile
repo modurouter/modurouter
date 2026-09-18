@@ -4,15 +4,20 @@
         X-Content-Type-Options nosniff
         Referrer-Policy no-referrer
     }
-    request_body {
+    @speech path /v1/audio/transcriptions
+    request_body @speech {
+        max_size 21MB
+    }
+    @other not path /v1/audio/transcriptions
+    request_body @other {
         max_size 11MB
     }
     reverse_proxy api:8000 {
         header_up X-Forwarded-For {remote_host}
         flush_interval -1
         transport http {
-            response_header_timeout 15s
-            read_timeout 130s
+            response_header_timeout 330s
+            read_timeout 330s
         }
     }
 }
